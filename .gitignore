@@ -16,3 +16,6 @@ out/
 *.lib
 *.o
 *.a
+
+# Claude Code
+.claude/
