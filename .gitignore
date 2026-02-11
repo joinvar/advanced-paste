@@ -1,0 +1,18 @@
+# Build output
+build/
+out/
+
+# IDE files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Compiled files
+*.obj
+*.exe
+*.dll
+*.lib
+*.o
+*.a

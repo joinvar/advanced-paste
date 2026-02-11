@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"D:/software/cmake/bin/cmake.exe\" --build . --config Release)",
+      "Bash(\"D:/software/cmake/bin/cmake.exe\" ..)",
+      "Bash(cmake --build \"D:/code/testCPP/advanced-paste/build\" --config Release)",
+      "Bash(cmake .. -G \"Visual Studio 17 2022\")",
+      "Bash(cmake ..)",
+      "Bash(gh auth status)",
+      "Bash(git --version)",
+      "Bash(winget --version)",
+      "Bash(scoop --version)",
+      "Bash(choco --version)",
+      "Bash(winget install GitHub.cli --accept-source-agreements --accept-package-agreements)",
+      "Bash(export PATH=\"/c/Program Files/GitHub CLI:$PATH\")",
+      "Bash(git init)",
+      "Bash(git add .)",
+      "Bash(git commit -m \"Initial commit\")"
+    ]
+  }
+}
