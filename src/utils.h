@@ -18,5 +18,8 @@ std::wstring GetConfigPath();
 // 读取快捷键配置，不存在则创建默认配置并返回 "Ctrl+Alt+X"
 std::wstring ReadHotkeyConfig();
 
+// 读取文件名前缀配置，可为空
+std::wstring ReadPatternConfig();
+
 // 解析快捷键字符串为 RegisterHotKey 所需的 modifiers 和 vk
 bool ParseHotkey(const std::wstring& str, UINT* modifiers, UINT* vk);

@@ -28,16 +28,37 @@ int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
     return -1;
 }
 
+static void ReplaceAll(std::wstring& s, const std::wstring& from, const std::wstring& to) {
+    size_t pos = 0;
+    while ((pos = s.find(from, pos)) != std::wstring::npos) {
+        s.replace(pos, from.size(), to);
+        pos += to.size();
+    }
+}
+
+static std::wstring ExpandPattern(const std::wstring& pattern) {
+    std::wstring result = pattern;
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    wchar_t buf[32];
+    swprintf_s(buf, L"%04d%02d%02d", st.wYear, st.wMonth, st.wDay);
+    ReplaceAll(result, L"{Date}", std::wstring(buf));
+    swprintf_s(buf, L"%02d%02d%02d", st.wHour, st.wMinute, st.wSecond);
+    ReplaceAll(result, L"{Time}", std::wstring(buf));
+    return result;
+}
+
 std::wstring SaveBitmapAsPng(HBITMAP hBitmap, int w, int h, const std::wstring& dir) {
     if (!hBitmap || w <= 0 || h <= 0) return L"";
 
     // 在目标目录中查找下一个可用编号
     std::wstring base = dir;
     if (base.back() != L'\\') base += L'\\';
+    std::wstring prefix = ExpandPattern(ReadPatternConfig());
     int num = 1;
-    while (GetFileAttributesW((base + std::to_wstring(num) + L".png").c_str()) != INVALID_FILE_ATTRIBUTES)
+    while (GetFileAttributesW((base + prefix + std::to_wstring(num) + L".png").c_str()) != INVALID_FILE_ATTRIBUTES)
         num++;
-    std::wstring filePath = base + std::to_wstring(num) + L".png";
+    std::wstring filePath = base + prefix + std::to_wstring(num) + L".png";
 
     Gdiplus::Bitmap bmp(hBitmap, NULL);
     CLSID clsid;
@@ -144,9 +165,20 @@ std::wstring ReadHotkeyConfig() {
         // 配置不存在，创建默认配置
         WritePrivateProfileStringW(L"Settings", L"Hotkey",
                                    defaultHotkey.c_str(), cfgPath.c_str());
+        // 同时写入 Pattern 默认值
+        WritePrivateProfileStringW(L"Settings", L"Pattern",
+                                   L"", cfgPath.c_str());
         return defaultHotkey;
     }
     return val;
+}
+
+std::wstring ReadPatternConfig() {
+    std::wstring cfgPath = GetConfigPath();
+    wchar_t buf[128] = {};
+    GetPrivateProfileStringW(L"Settings", L"Pattern", L"",
+                             buf, 128, cfgPath.c_str());
+    return std::wstring(buf);
 }
 
 static std::wstring ToUpper(const std::wstring& s) {
