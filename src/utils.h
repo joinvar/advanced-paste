@@ -11,3 +11,12 @@ std::wstring GetActiveExplorerPath();
 
 // 获取 GDI+ PNG 编码器 CLSID
 int GetEncoderClsid(const WCHAR* format, CLSID* pClsid);
+
+// 获取 exe 同目录下 config.ini 路径
+std::wstring GetConfigPath();
+
+// 读取快捷键配置，不存在则创建默认配置并返回 "Ctrl+Alt+X"
+std::wstring ReadHotkeyConfig();
+
+// 解析快捷键字符串为 RegisterHotKey 所需的 modifiers 和 vk
+bool ParseHotkey(const std::wstring& str, UINT* modifiers, UINT* vk);

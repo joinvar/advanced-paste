@@ -15,11 +15,29 @@
 static NOTIFYICONDATAW g_nid = {};
 static HWND  g_hwndMain = NULL;
 static HHOOK g_hKeyHook = NULL;
+static UINT  g_hkMod = 0;   // 快捷键修饰键 (MOD_*)
+static UINT  g_hkVk  = 0;   // 快捷键主键
+static bool  g_hkUseHook = false; // RegisterHotKey 失败时用钩子拦截
 
-// 低级键盘钩子：拦截 Explorer 中的 Ctrl+V
+static bool CheckHotkeyModifiers(UINT mod) {
+    bool ctrl  = (mod & MOD_CONTROL) ? (GetAsyncKeyState(VK_CONTROL) & 0x8000) : !(GetAsyncKeyState(VK_CONTROL) & 0x8000);
+    bool alt   = (mod & MOD_ALT)     ? (GetAsyncKeyState(VK_MENU)    & 0x8000) : !(GetAsyncKeyState(VK_MENU)    & 0x8000);
+    bool shift = (mod & MOD_SHIFT)   ? (GetAsyncKeyState(VK_SHIFT)   & 0x8000) : !(GetAsyncKeyState(VK_SHIFT)   & 0x8000);
+    bool win   = (mod & MOD_WIN)     ? ((GetAsyncKeyState(VK_LWIN) | GetAsyncKeyState(VK_RWIN)) & 0x8000)
+                                     : !((GetAsyncKeyState(VK_LWIN) | GetAsyncKeyState(VK_RWIN)) & 0x8000);
+    return ctrl && alt && shift && win;
+}
+
+// 低级键盘钩子：拦截截图快捷键 + Explorer 中的 Ctrl+V
 static LRESULT CALLBACK LLKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode == HC_ACTION && wParam == WM_KEYDOWN) {
         auto* kb = (KBDLLHOOKSTRUCT*)lParam;
+        // 截图快捷键（仅在 RegisterHotKey 失败时启用）
+        if (g_hkUseHook && kb->vkCode == g_hkVk && CheckHotkeyModifiers(g_hkMod)) {
+            PostMessageW(g_hwndMain, WM_HOTKEY, ID_HOTKEY, 0);
+            return 1;
+        }
+        // Ctrl+V 粘贴拦截
         if (kb->vkCode == 'V' && (GetAsyncKeyState(VK_CONTROL) & 0x8000)) {
             if (GetPendingBitmap(NULL, NULL)) {
                 HWND hwndFg = GetForegroundWindow();
@@ -101,9 +119,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     g_hwndMain = CreateWindowExW(0, L"AdvancedPasteMain", L"Advanced Paste",
         0, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL);
 
-    if (!RegisterHotKey(g_hwndMain, ID_HOTKEY, MOD_CONTROL | MOD_ALT, 'X')) {
-        MessageBoxW(NULL, L"无法注册热键 Ctrl+Alt+X", L"错误", MB_OK | MB_ICONERROR);
+    // 读取并解析快捷键配置
+    std::wstring hotkeyStr = ReadHotkeyConfig();
+    if (!ParseHotkey(hotkeyStr, &g_hkMod, &g_hkVk)) {
+        MessageBoxW(NULL, (L"快捷键配置无效: " + hotkeyStr).c_str(),
+                    L"错误", MB_OK | MB_ICONERROR);
         return 1;
+    }
+
+    // 优先用 RegisterHotKey，失败则回退到键盘钩子拦截
+    if (!RegisterHotKey(g_hwndMain, ID_HOTKEY, g_hkMod, g_hkVk)) {
+        g_hkUseHook = true;
     }
 
     // 安装键盘钩子
@@ -115,7 +141,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     g_nid.uCallbackMessage = WM_TRAYICON;
     g_nid.hIcon = LoadIconW(NULL, IDI_APPLICATION);
-    wcscpy_s(g_nid.szTip, L"截图工具 (Ctrl+Alt+X)");
+    std::wstring tip = L"截图工具 (" + hotkeyStr + L")";
+    wcsncpy_s(g_nid.szTip, tip.c_str(), _TRUNCATE);
     Shell_NotifyIconW(NIM_ADD, &g_nid);
 
     MSG msg;

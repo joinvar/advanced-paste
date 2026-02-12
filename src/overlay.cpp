@@ -389,10 +389,20 @@ static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         return 0;
     }
     case WM_RBUTTONDOWN:
-        // 右键撤销最后一个标注
-        if (g_state == ST_EDIT && !g_annos.empty()) {
-            g_annos.pop_back();
-            InvalidateRect(hwnd, NULL, FALSE);
+        if (g_state == ST_EDIT) {
+            POINT ptClick;
+            GetCursorPos(&ptClick);
+            if (PtInRect(&g_selRect, ptClick)) {
+                // 选区内：撤销最后一个标注
+                if (!g_annos.empty()) {
+                    g_annos.pop_back();
+                    InvalidateRect(hwnd, NULL, FALSE);
+                }
+            } else {
+                // 选区外：完成截图
+                FinishCapture();
+                DestroyWindow(hwnd);
+            }
         }
         return 0;
     case WM_KEYDOWN:

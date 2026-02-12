@@ -3,6 +3,8 @@
 #include <exdisp.h>
 #include <shobjidl.h>
 #include <algorithm>
+#include <vector>
+#include <cctype>
 
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "ole32.lib")
@@ -117,4 +119,82 @@ std::wstring GetActiveExplorerPath() {
     }
     psw->Release();
     return result;
+}
+
+std::wstring GetConfigPath() {
+    wchar_t exePath[MAX_PATH] = {};
+    GetModuleFileNameW(NULL, exePath, MAX_PATH);
+    std::wstring path(exePath);
+    auto pos = path.find_last_of(L'\\');
+    if (pos != std::wstring::npos)
+        path = path.substr(0, pos + 1);
+    return path + L"config.ini";
+}
+
+std::wstring ReadHotkeyConfig() {
+    std::wstring cfgPath = GetConfigPath();
+    const std::wstring defaultHotkey = L"Ctrl+Alt+X";
+
+    wchar_t buf[128] = {};
+    GetPrivateProfileStringW(L"Settings", L"Hotkey", L"",
+                             buf, 128, cfgPath.c_str());
+    std::wstring val(buf);
+
+    if (val.empty()) {
+        // 配置不存在，创建默认配置
+        WritePrivateProfileStringW(L"Settings", L"Hotkey",
+                                   defaultHotkey.c_str(), cfgPath.c_str());
+        return defaultHotkey;
+    }
+    return val;
+}
+
+static std::wstring ToUpper(const std::wstring& s) {
+    std::wstring r = s;
+    for (auto& c : r) c = towupper(c);
+    return r;
+}
+
+bool ParseHotkey(const std::wstring& str, UINT* modifiers, UINT* vk) {
+    *modifiers = 0;
+    *vk = 0;
+
+    // 按 '+' 分割
+    std::vector<std::wstring> parts;
+    std::wstring cur;
+    for (auto c : str) {
+        if (c == L'+') {
+            if (!cur.empty()) { parts.push_back(cur); cur.clear(); }
+        } else if (c != L' ') {
+            cur += c;
+        }
+    }
+    if (!cur.empty()) parts.push_back(cur);
+    if (parts.empty()) return false;
+
+    // 最后一个是主键，前面都是修饰键
+    for (size_t i = 0; i + 1 < parts.size(); i++) {
+        std::wstring mod = ToUpper(parts[i]);
+        if (mod == L"CTRL" || mod == L"CONTROL") *modifiers |= MOD_CONTROL;
+        else if (mod == L"ALT")                  *modifiers |= MOD_ALT;
+        else if (mod == L"SHIFT")                *modifiers |= MOD_SHIFT;
+        else if (mod == L"WIN")                  *modifiers |= MOD_WIN;
+        else return false;
+    }
+
+    // 解析主键
+    std::wstring key = ToUpper(parts.back());
+    if (key.size() == 1 && ((key[0] >= L'A' && key[0] <= L'Z') ||
+                            (key[0] >= L'0' && key[0] <= L'9'))) {
+        *vk = (UINT)key[0];
+    } else if (key.size() >= 2 && key[0] == L'F' &&
+               key[1] >= L'1' && key[1] <= L'9') {
+        int fnum = _wtoi(key.c_str() + 1);
+        if (fnum >= 1 && fnum <= 24) *vk = VK_F1 + fnum - 1;
+        else return false;
+    } else {
+        return false;
+    }
+
+    return *vk != 0;
 }
