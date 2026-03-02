@@ -35,6 +35,7 @@
 [Settings]
 Hotkey=Ctrl+Alt+X
 Pattern=
+AutoFinishOnSelect=0
 ```
 
 **Hotkey** — 截图快捷键，支持修饰键 `Ctrl`、`Alt`、`Shift`、`Win`，用 `+` 连接，最后一个为主键（A-Z、0-9、F1-F24）。修改后需重启程序生效。即使快捷键被系统占用（如 `Shift+Win+S`），程序也会通过键盘钩子优先拦截。
@@ -42,6 +43,10 @@ Pattern=
 **Pattern** — 输出文件名前缀，可为空。支持占位符：
 - `{Date}` — 当前日期，格式 `20260212`
 - `{Time}` — 当前时间，格式 `143025`
+
+**AutoFinishOnSelect** — 框选完成后是否立即结束截图：
+- `0`（默认）— 框选后进入编辑态，需要点击「完成」或在选区外右键结束
+- `1` — 左键抬起后立即完成截图并关闭 overlay，不进入编辑态
 
 示例：
 

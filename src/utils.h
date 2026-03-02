@@ -21,5 +21,8 @@ std::wstring ReadHotkeyConfig();
 // 读取文件名前缀配置，可为空
 std::wstring ReadPatternConfig();
 
+// 读取框选后是否立即完成（AutoFinishOnSelect），默认 false
+bool ReadAutoFinishOnSelectConfig();
+
 // 解析快捷键字符串为 RegisterHotKey 所需的 modifiers 和 vk
 bool ParseHotkey(const std::wstring& str, UINT* modifiers, UINT* vk);

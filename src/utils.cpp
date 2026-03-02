@@ -168,6 +168,9 @@ std::wstring ReadHotkeyConfig() {
         // 同时写入 Pattern 默认值
         WritePrivateProfileStringW(L"Settings", L"Pattern",
                                    L"", cfgPath.c_str());
+        // 同时写入 AutoFinishOnSelect 默认值
+        WritePrivateProfileStringW(L"Settings", L"AutoFinishOnSelect",
+                                   L"0", cfgPath.c_str());
         return defaultHotkey;
     }
     return val;
@@ -179,6 +182,22 @@ std::wstring ReadPatternConfig() {
     GetPrivateProfileStringW(L"Settings", L"Pattern", L"",
                              buf, 128, cfgPath.c_str());
     return std::wstring(buf);
+}
+
+bool ReadAutoFinishOnSelectConfig() {
+    std::wstring cfgPath = GetConfigPath();
+    wchar_t buf[32] = {};
+    GetPrivateProfileStringW(L"Settings", L"AutoFinishOnSelect", L"",
+                             buf, 32, cfgPath.c_str());
+    std::wstring val(buf);
+
+    if (val.empty()) {
+        WritePrivateProfileStringW(L"Settings", L"AutoFinishOnSelect",
+                                   L"0", cfgPath.c_str());
+        return false;
+    }
+
+    return val == L"1" || _wcsicmp(val.c_str(), L"true") == 0;
 }
 
 static std::wstring ToUpper(const std::wstring& s) {

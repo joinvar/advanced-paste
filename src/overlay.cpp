@@ -1,4 +1,5 @@
 #include "overlay.h"
+#include "utils.h"
 #include <dwmapi.h>
 #include <algorithm>
 #include <vector>
@@ -372,6 +373,11 @@ static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
                 g_selRect.bottom = (std::max)(g_ptStart.y, g_ptEnd.y);
             }
             g_dragging = FALSE;
+            if (ReadAutoFinishOnSelectConfig()) {
+                FinishCapture();
+                DestroyWindow(hwnd);
+                return 0;
+            }
             g_state = ST_EDIT;
             g_curTool = TL_NONE;
             g_annos.clear();
