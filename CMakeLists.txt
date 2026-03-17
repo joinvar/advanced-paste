@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.15)
-project(AdvancedPaste LANGUAGES CXX)
+project(AdvancedPaste LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 17)
 
 add_executable(AdvancedPaste WIN32
     src/main.cpp
     src/overlay.cpp
+    src/app.rc
     src/utils.cpp
 )
 

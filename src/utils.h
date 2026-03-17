@@ -9,6 +9,9 @@ std::wstring SaveBitmapAsPng(HBITMAP hBitmap, int w, int h, const std::wstring& 
 // 获取当前活动的 Explorer 窗口所在文件夹路径
 std::wstring GetActiveExplorerPath();
 
+// 当前前台窗口是否属于 Explorer
+bool IsForegroundExplorerWindow();
+
 // 获取 GDI+ PNG 编码器 CLSID
 int GetEncoderClsid(const WCHAR* format, CLSID* pClsid);
 

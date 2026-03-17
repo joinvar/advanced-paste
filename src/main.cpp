@@ -2,6 +2,7 @@
 #include <shellapi.h>
 #include <gdiplus.h>
 #include "overlay.h"
+#include "resource.h"
 #include "utils.h"
 
 #pragma comment(lib, "gdiplus.lib")
@@ -28,6 +29,20 @@ static bool CheckHotkeyModifiers(UINT mod) {
     return ctrl && alt && shift && win;
 }
 
+static HICON LoadAppIcon(HINSTANCE hInstance, int width, int height) {
+    HICON hIcon = (HICON)LoadImageW(
+        hInstance,
+        MAKEINTRESOURCEW(IDI_APP_ICON),
+        IMAGE_ICON,
+        width,
+        height,
+        LR_DEFAULTCOLOR
+    );
+    if (!hIcon)
+        hIcon = LoadIconW(NULL, IDI_APPLICATION);
+    return hIcon;
+}
+
 // 低级键盘钩子：拦截截图快捷键 + Explorer 中的 Ctrl+V
 static LRESULT CALLBACK LLKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode == HC_ACTION && wParam == WM_KEYDOWN) {
@@ -39,14 +54,9 @@ static LRESULT CALLBACK LLKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) 
         }
         // Ctrl+V 粘贴拦截
         if (kb->vkCode == 'V' && (GetAsyncKeyState(VK_CONTROL) & 0x8000)) {
-            if (GetPendingBitmap(NULL, NULL)) {
-                HWND hwndFg = GetForegroundWindow();
-                wchar_t cls[64] = {};
-                GetClassNameW(hwndFg, cls, 64);
-                if (wcscmp(cls, L"CabinetWClass") == 0) {
-                    PostMessageW(g_hwndMain, WM_DO_PASTE, 0, 0);
-                    return 1; // 吃掉按键
-                }
+            if (GetPendingBitmap(NULL, NULL) && IsForegroundExplorerWindow()) {
+                PostMessageW(g_hwndMain, WM_DO_PASTE, 0, 0);
+                return 1; // 吃掉按键
             }
         }
     }
@@ -113,6 +123,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     WNDCLASSEXW wc = { sizeof(wc) };
     wc.lpfnWndProc = MainWndProc;
     wc.hInstance = hInstance;
+    wc.hIcon = LoadAppIcon(hInstance, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
+    wc.hIconSm = LoadAppIcon(hInstance, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
     wc.lpszClassName = L"AdvancedPasteMain";
     RegisterClassExW(&wc);
 
@@ -140,7 +152,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     g_nid.uID = 1;
     g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     g_nid.uCallbackMessage = WM_TRAYICON;
-    g_nid.hIcon = LoadIconW(NULL, IDI_APPLICATION);
+    g_nid.hIcon = LoadAppIcon(hInstance, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
     std::wstring tip = L"截图工具 (" + hotkeyStr + L")";
     wcsncpy_s(g_nid.szTip, tip.c_str(), _TRUNCATE);
     Shell_NotifyIconW(NIM_ADD, &g_nid);

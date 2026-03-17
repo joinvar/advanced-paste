@@ -10,6 +10,37 @@
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
 
+static HWND GetRootWindowOrSelf(HWND hwnd) {
+    if (!hwnd) return NULL;
+    HWND root = GetAncestor(hwnd, GA_ROOT);
+    return root ? root : hwnd;
+}
+
+static bool IsExplorerFrameWindow(HWND hwnd) {
+    if (!hwnd) return false;
+    wchar_t cls[64] = {};
+    if (!GetClassNameW(hwnd, cls, 64))
+        return false;
+    return wcscmp(cls, L"CabinetWClass") == 0 || wcscmp(cls, L"ExploreWClass") == 0;
+}
+
+static HWND GetForegroundFocusWindow() {
+    HWND hwndFg = GetForegroundWindow();
+    if (!hwndFg) return NULL;
+
+    DWORD threadId = GetWindowThreadProcessId(hwndFg, NULL);
+    if (!threadId) return hwndFg;
+
+    GUITHREADINFO gti = {};
+    gti.cbSize = sizeof(gti);
+    if (!GetGUIThreadInfo(threadId, &gti))
+        return hwndFg;
+
+    if (gti.hwndFocus) return gti.hwndFocus;
+    if (gti.hwndActive) return gti.hwndActive;
+    return hwndFg;
+}
+
 int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
     UINT num = 0, size = 0;
     Gdiplus::GetImageEncodersSize(&num, &size);
@@ -70,11 +101,11 @@ std::wstring SaveBitmapAsPng(HBITMAP hBitmap, int w, int h, const std::wstring& 
 std::wstring GetActiveExplorerPath() {
     HWND hwndFg = GetForegroundWindow();
     if (!hwndFg) return L"";
+    HWND hwndRoot = GetRootWindowOrSelf(hwndFg);
+    HWND hwndFocus = GetForegroundFocusWindow();
 
     // 确认前台窗口是 Explorer
-    wchar_t cls[64] = {};
-    GetClassNameW(hwndFg, cls, 64);
-    if (wcscmp(cls, L"CabinetWClass") != 0) return L"";
+    if (!IsExplorerFrameWindow(hwndRoot)) return L"";
 
     IShellWindows* psw = NULL;
     if (FAILED(CoCreateInstance(CLSID_ShellWindows, NULL, CLSCTX_ALL,
@@ -82,6 +113,7 @@ std::wstring GetActiveExplorerPath() {
         return L"";
 
     std::wstring result;
+    std::wstring fallbackResult;
     long count = 0;
     psw->get_Count(&count);
 
@@ -100,7 +132,7 @@ std::wstring GetActiveExplorerPath() {
 
         SHANDLE_PTR hWnd = 0;
         pBrowser->get_HWND(&hWnd);
-        if ((HWND)hWnd != hwndFg) { pBrowser->Release(); continue; }
+        if ((HWND)hWnd != hwndRoot) { pBrowser->Release(); continue; }
 
         IServiceProvider* pSP = NULL;
         pBrowser->QueryInterface(IID_IServiceProvider, (void**)&pSP);
@@ -117,6 +149,9 @@ std::wstring GetActiveExplorerPath() {
         pSB->Release();
         if (!pSV) break;
 
+        HWND hwndView = NULL;
+        pSV->GetWindow(&hwndView);
+
         IFolderView* pFV = NULL;
         pSV->QueryInterface(IID_IFolderView, (void**)&pFV);
         pSV->Release();
@@ -132,14 +167,26 @@ std::wstring GetActiveExplorerPath() {
         pPF->Release();
         if (pidl) {
             wchar_t path[MAX_PATH];
-            if (SHGetPathFromIDListW(pidl, path))
-                result = path;
+            if (SHGetPathFromIDListW(pidl, path)) {
+                if (fallbackResult.empty())
+                    fallbackResult = path;
+
+                if (hwndFocus && hwndView &&
+                    (hwndFocus == hwndView || IsChild(hwndView, hwndFocus))) {
+                    result = path;
+                    CoTaskMemFree(pidl);
+                    break;
+                }
+            }
             CoTaskMemFree(pidl);
         }
-        break;
     }
     psw->Release();
-    return result;
+    return !result.empty() ? result : fallbackResult;
+}
+
+bool IsForegroundExplorerWindow() {
+    return IsExplorerFrameWindow(GetRootWindowOrSelf(GetForegroundWindow()));
 }
 
 std::wstring GetConfigPath() {
