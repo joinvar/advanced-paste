@@ -1,5 +1,7 @@
 # Advanced Paste 截图工具
 
+中文 | [English](README_EN.md)
+
 ## 快捷键
 
 - **Ctrl+Alt+X**（默认，可配置） — 启动截图
