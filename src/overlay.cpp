@@ -11,13 +11,13 @@
 // --- 类型定义 ---
 struct WndRect { HWND hwnd; RECT rc; };
 enum OvState { ST_SELECT, ST_EDIT };
-enum Tool    { TL_NONE, TL_ARROW, TL_RECT };
-struct Anno  { Tool type; POINT p1, p2; };
+enum Tool    { TL_NONE, TL_ARROW, TL_RECT, TL_BRUSH };
+struct Anno  { Tool type; POINT p1, p2; std::vector<POINT> pts; };
 
 struct TBtn {
     RECT rc;          // overlay 坐标
     const wchar_t* text;
-    int id;           // 0=箭头, 1=矩形, 2=完成, 3=取消
+    int id;           // 0=箭头, 1=矩形, 2=画笔, 3=完成, 4=取消
 };
 
 // --- 全局状态 ---
@@ -38,9 +38,10 @@ static RECT     g_selRect = {};       // 选区（屏幕坐标）
 static Tool     g_curTool = TL_NONE;
 static bool     g_drawing = false;
 static POINT    g_drawP1 = {}, g_drawP2 = {};
+static std::vector<POINT> g_curBrushPts;   // 画笔当前笔画（屏幕坐标）
 static std::vector<Anno> g_annos;
-static TBtn     g_btns[4];
-static const int BTN_COUNT = 4;
+static const int BTN_COUNT = 5;
+static TBtn     g_btns[BTN_COUNT];
 static const int BTN_W = 56, BTN_H = 28, BTN_GAP = 4;
 
 // 待粘贴位图
@@ -95,7 +96,7 @@ static void InitToolbar() {
     if (y + BTN_H > g_scrH)
         y = (g_selRect.top - g_scrY) - BTN_H - 8;
 
-    const wchar_t* labels[] = { L"箭头", L"矩形", L"完成", L"取消" };
+    const wchar_t* labels[] = { L"箭头", L"矩形", L"画笔", L"完成", L"取消" };
     for (int i = 0; i < BTN_COUNT; i++) {
         g_btns[i].rc = { startX + i * (BTN_W + BTN_GAP), y,
                          startX + i * (BTN_W + BTN_GAP) + BTN_W, y + BTN_H };
@@ -138,20 +139,56 @@ static void DrawAnnoRect(HDC hdc, POINT p1, POINT p2) {
     SelectObject(hdc, hOld); DeleteObject(hPen);
 }
 
+// 在 HDC 上绘制画笔笔画（pts 已转到目标 DC 坐标）
+static void DrawBrush(HDC hdc, const std::vector<POINT>& pts) {
+    if (pts.size() < 2) {
+        if (pts.size() == 1) {
+            // 单点：画一个小圆点
+            HBRUSH hBr = CreateSolidBrush(RGB(255, 40, 40));
+            HBRUSH hOldBr = (HBRUSH)SelectObject(hdc, hBr);
+            HPEN hPen = CreatePen(PS_SOLID, 1, RGB(255, 40, 40));
+            HPEN hOld = (HPEN)SelectObject(hdc, hPen);
+            Ellipse(hdc, pts[0].x - 2, pts[0].y - 2, pts[0].x + 2, pts[0].y + 2);
+            SelectObject(hdc, hOld); DeleteObject(hPen);
+            SelectObject(hdc, hOldBr); DeleteObject(hBr);
+        }
+        return;
+    }
+    HPEN hPen = CreatePen(PS_SOLID, 3, RGB(255, 40, 40));
+    HPEN hOld = (HPEN)SelectObject(hdc, hPen);
+    // 让线端更圆润
+    Polyline(hdc, pts.data(), (int)pts.size());
+    SelectObject(hdc, hOld); DeleteObject(hPen);
+}
+
 // 绘制所有标注（需传入偏移量，将屏幕坐标转为目标 DC 坐标）
 static void DrawAnnotations(HDC hdc, int offX, int offY) {
     for (auto& a : g_annos) {
-        POINT p1 = { a.p1.x + offX, a.p1.y + offY };
-        POINT p2 = { a.p2.x + offX, a.p2.y + offY };
-        if (a.type == TL_ARROW) DrawArrow(hdc, p1, p2);
-        else if (a.type == TL_RECT) DrawAnnoRect(hdc, p1, p2);
+        if (a.type == TL_BRUSH) {
+            std::vector<POINT> pts;
+            pts.reserve(a.pts.size());
+            for (auto& p : a.pts) pts.push_back({ p.x + offX, p.y + offY });
+            DrawBrush(hdc, pts);
+        } else {
+            POINT p1 = { a.p1.x + offX, a.p1.y + offY };
+            POINT p2 = { a.p2.x + offX, a.p2.y + offY };
+            if (a.type == TL_ARROW) DrawArrow(hdc, p1, p2);
+            else if (a.type == TL_RECT) DrawAnnoRect(hdc, p1, p2);
+        }
     }
     // 正在绘制的标注
     if (g_drawing && g_curTool != TL_NONE) {
-        POINT p1 = { g_drawP1.x + offX, g_drawP1.y + offY };
-        POINT p2 = { g_drawP2.x + offX, g_drawP2.y + offY };
-        if (g_curTool == TL_ARROW) DrawArrow(hdc, p1, p2);
-        else DrawAnnoRect(hdc, p1, p2);
+        if (g_curTool == TL_BRUSH) {
+            std::vector<POINT> pts;
+            pts.reserve(g_curBrushPts.size());
+            for (auto& p : g_curBrushPts) pts.push_back({ p.x + offX, p.y + offY });
+            DrawBrush(hdc, pts);
+        } else {
+            POINT p1 = { g_drawP1.x + offX, g_drawP1.y + offY };
+            POINT p2 = { g_drawP2.x + offX, g_drawP2.y + offY };
+            if (g_curTool == TL_ARROW) DrawArrow(hdc, p1, p2);
+            else DrawAnnoRect(hdc, p1, p2);
+        }
     }
 }
 
@@ -275,7 +312,8 @@ static void PaintOverlay(HWND, HDC hdc) {
 
         for (int i = 0; i < BTN_COUNT; i++) {
             bool active = (i == 0 && g_curTool == TL_ARROW) ||
-                          (i == 1 && g_curTool == TL_RECT);
+                          (i == 1 && g_curTool == TL_RECT) ||
+                          (i == 2 && g_curTool == TL_BRUSH);
             COLORREF bgCol = active ? RGB(0, 120, 215) : RGB(50, 50, 50);
             HBRUSH hBr = CreateSolidBrush(bgCol);
             FillRect(hdcBack, &g_btns[i].rc, hBr);
@@ -327,6 +365,13 @@ static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             else g_rcHighlight = FindWindowRectAtPoint(pt);
         } else if (g_drawing) {
             g_drawP2 = pt;
+            if (g_curTool == TL_BRUSH) {
+                // 避免重复点积累
+                if (g_curBrushPts.empty() ||
+                    g_curBrushPts.back().x != pt.x || g_curBrushPts.back().y != pt.y) {
+                    g_curBrushPts.push_back(pt);
+                }
+            }
         }
         InvalidateRect(hwnd, NULL, FALSE);
         return 0;
@@ -344,12 +389,17 @@ static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             int btnId = HitTestToolbar(ptOv);
             if (btnId == 0) { g_curTool = TL_ARROW; InvalidateRect(hwnd, NULL, FALSE); }
             else if (btnId == 1) { g_curTool = TL_RECT; InvalidateRect(hwnd, NULL, FALSE); }
-            else if (btnId == 2) { FinishCapture(); DestroyWindow(hwnd); }
-            else if (btnId == 3) { DestroyWindow(hwnd); }
+            else if (btnId == 2) { g_curTool = TL_BRUSH; InvalidateRect(hwnd, NULL, FALSE); }
+            else if (btnId == 3) { FinishCapture(); DestroyWindow(hwnd); }
+            else if (btnId == 4) { DestroyWindow(hwnd); }
             else if (g_curTool != TL_NONE) {
                 // 开始绘制标注
                 g_drawing = true;
                 g_drawP1 = g_drawP2 = pt;
+                if (g_curTool == TL_BRUSH) {
+                    g_curBrushPts.clear();
+                    g_curBrushPts.push_back(pt);
+                }
                 SetCapture(hwnd);
             }
         }
@@ -386,9 +436,25 @@ static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         } else if (g_drawing) {
             ReleaseCapture();
             g_drawP2 = pt;
-            // 保存标注
-            if (abs(g_drawP2.x - g_drawP1.x) > 3 || abs(g_drawP2.y - g_drawP1.y) > 3)
-                g_annos.push_back({ g_curTool, g_drawP1, g_drawP2 });
+            if (g_curTool == TL_BRUSH) {
+                if (g_curBrushPts.empty() ||
+                    g_curBrushPts.back().x != pt.x || g_curBrushPts.back().y != pt.y) {
+                    g_curBrushPts.push_back(pt);
+                }
+                if (!g_curBrushPts.empty()) {
+                    Anno a;
+                    a.type = TL_BRUSH;
+                    a.p1 = g_curBrushPts.front();
+                    a.p2 = g_curBrushPts.back();
+                    a.pts = g_curBrushPts;
+                    g_annos.push_back(std::move(a));
+                }
+                g_curBrushPts.clear();
+            } else {
+                // 保存标注
+                if (abs(g_drawP2.x - g_drawP1.x) > 3 || abs(g_drawP2.y - g_drawP1.y) > 3)
+                    g_annos.push_back({ g_curTool, g_drawP1, g_drawP2, {} });
+            }
             g_drawing = false;
             InvalidateRect(hwnd, NULL, FALSE);
         }
@@ -415,6 +481,7 @@ static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         if (wParam == VK_ESCAPE) {
             g_dragging = FALSE;
             g_drawing = false;
+            g_curBrushPts.clear();
             DestroyWindow(hwnd);
         }
         // Ctrl+Z 撤销
@@ -429,6 +496,7 @@ static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         g_hOverlay = NULL;
         g_state = ST_SELECT;
         g_annos.clear();
+        g_curBrushPts.clear();
         if (g_hScreenBmp) { DeleteObject(g_hScreenBmp); g_hScreenBmp = NULL; }
         return 0;
     }
@@ -443,6 +511,7 @@ void StartCapture(HWND hParent) {
     g_drawing = false;
     g_curTool = TL_NONE;
     g_annos.clear();
+    g_curBrushPts.clear();
     SetRectEmpty(&g_rcHighlight);
     SetRectEmpty(&g_selRect);
 

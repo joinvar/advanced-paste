@@ -17,8 +17,9 @@
    - Move the mouse to auto-highlight the window under the cursor, then click to select it
    - Or drag with the left mouse button to select any rectangular region
 4. **Annotate** (optional):
-   - A toolbar appears below the selection: "Arrow", "Rectangle", "Done", "Cancel"
-   - Click "Arrow" or "Rectangle" to activate the tool, then drag inside the selection to draw
+   - A toolbar appears below the selection: "Arrow", "Rectangle", "Brush", "Done", "Cancel"
+   - Click "Arrow", "Rectangle" or "Brush" to activate the tool, then drag inside the selection to draw
+   - "Brush" supports freehand curves — hold the left button and move
    - Right-click inside the selection or press Ctrl+Z to undo the last annotation
    - Right-click outside the selection to finish immediately
 5. Click "Done" (or right-click outside the selection) to store the screenshot with annotations in memory and copy it to the system clipboard
