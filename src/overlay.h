@@ -9,3 +9,7 @@ HBITMAP GetPendingBitmap(int* w, int* h);
 
 // 清除待粘贴位图（保存成功后调用）
 void ClearPendingBitmap();
+
+// 剪贴板被外部修改时调用，清除待粘贴位图
+// 返回 true 表示确实清除了，false 表示是本程序自己写入的剪贴板
+bool OnClipboardChanged();

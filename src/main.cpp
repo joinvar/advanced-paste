@@ -81,6 +81,9 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         }
         break;
     }
+    case WM_CLIPBOARDUPDATE:
+        OnClipboardChanged();
+        return 0;
     case WM_TRAYICON:
         if (lParam == WM_RBUTTONUP) {
             POINT pt;
@@ -99,6 +102,7 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         }
         break;
     case WM_DESTROY:
+        RemoveClipboardFormatListener(hwnd);
         Shell_NotifyIconW(NIM_DELETE, &g_nid);
         PostQuitMessage(0);
         break;
@@ -130,6 +134,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
 
     g_hwndMain = CreateWindowExW(0, L"AdvancedPasteMain", L"Advanced Paste",
         0, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL);
+
+    AddClipboardFormatListener(g_hwndMain);
 
     // 读取并解析快捷键配置
     std::wstring hotkeyStr = ReadHotkeyConfig();

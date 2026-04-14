@@ -47,6 +47,7 @@ static const int BTN_W = 56, BTN_H = 28, BTN_GAP = 4;
 // 待粘贴位图
 static HBITMAP  g_pendingBmp = NULL;
 static int      g_pendingW = 0, g_pendingH = 0;
+static bool     g_selfClipboard = false; // 标记本程序正在写入剪贴板
 
 HBITMAP GetPendingBitmap(int* w, int* h) {
     if (w) *w = g_pendingW;
@@ -61,6 +62,18 @@ void ClearPendingBitmap() {
     }
     g_pendingW = 0;
     g_pendingH = 0;
+}
+
+bool OnClipboardChanged() {
+    if (g_selfClipboard) {
+        g_selfClipboard = false;
+        return false;
+    }
+    if (g_pendingBmp) {
+        ClearPendingBitmap();
+        return true;
+    }
+    return false;
 }
 
 // --- 辅助函数 ---
@@ -228,6 +241,7 @@ static void FinishCapture() {
     g_pendingH = h;
 
     // 同时写入系统剪贴板，让其他应用也能粘贴
+    g_selfClipboard = true;
     if (OpenClipboard(g_hOverlay)) {
         EmptyClipboard();
         HDC hdcScr2 = GetDC(NULL);
