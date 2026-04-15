@@ -8,10 +8,14 @@
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "shell32.lib")
 
-#define WM_TRAYICON  (WM_USER + 1)
-#define WM_DO_PASTE  (WM_USER + 2)
-#define ID_HOTKEY    1
-#define ID_TRAY_EXIT 1001
+#define WM_TRAYICON           (WM_USER + 1)
+#define WM_DO_PASTE           (WM_USER + 2)
+#define ID_HOTKEY             1
+#define ID_TRAY_EXIT          1001
+#define ID_TRAY_SET_SAVEDIR   1002
+#define ID_TRAY_CLEAR_SAVEDIR 1003
+#define ID_TRAY_TOGGLE_AUTOFINISH 1004
+#define ID_TRAY_OPEN_CONFIG   1005
 
 static NOTIFYICONDATAW g_nid = {};
 static HWND  g_hwndMain = NULL;
@@ -27,6 +31,15 @@ static bool CheckHotkeyModifiers(UINT mod) {
     bool win   = (mod & MOD_WIN)     ? ((GetAsyncKeyState(VK_LWIN) | GetAsyncKeyState(VK_RWIN)) & 0x8000)
                                      : !((GetAsyncKeyState(VK_LWIN) | GetAsyncKeyState(VK_RWIN)) & 0x8000);
     return ctrl && alt && shift && win;
+}
+
+static void ShowTrayBalloon(const wchar_t* title, const wchar_t* text) {
+    NOTIFYICONDATAW nid = g_nid;
+    nid.uFlags = NIF_INFO;
+    nid.dwInfoFlags = NIIF_INFO | NIIF_NOSOUND;
+    wcsncpy_s(nid.szInfoTitle, title, _TRUNCATE);
+    wcsncpy_s(nid.szInfo, text, _TRUNCATE);
+    Shell_NotifyIconW(NIM_MODIFY, &nid);
 }
 
 static HICON LoadAppIcon(HINSTANCE hInstance, int width, int height) {
@@ -88,17 +101,59 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         if (lParam == WM_RBUTTONUP) {
             POINT pt;
             GetCursorPos(&pt);
+
+            std::wstring saveDir = ReadSaveDirConfig();
+            bool autoFinish = ReadAutoFinishOnSelectConfig();
+
             HMENU hMenu = CreatePopupMenu();
+
+            std::wstring saveDirLabel = L"保存目录: ";
+            saveDirLabel += saveDir.empty() ? L"(未设置)" : saveDir;
+            AppendMenuW(hMenu, MF_STRING, ID_TRAY_SET_SAVEDIR, saveDirLabel.c_str());
+            if (!saveDir.empty())
+                AppendMenuW(hMenu, MF_STRING, ID_TRAY_CLEAR_SAVEDIR, L"清除保存目录");
+
+            AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+            AppendMenuW(hMenu,
+                        MF_STRING | (autoFinish ? MF_CHECKED : MF_UNCHECKED),
+                        ID_TRAY_TOGGLE_AUTOFINISH, L"框选后立即完成");
+
+            AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+            AppendMenuW(hMenu, MF_STRING, ID_TRAY_OPEN_CONFIG, L"打开配置文件");
+            AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
             AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"退出");
+
             SetForegroundWindow(hwnd);
             TrackPopupMenu(hMenu, TPM_RIGHTALIGN, pt.x, pt.y, 0, hwnd, NULL);
             DestroyMenu(hMenu);
         }
         break;
     case WM_COMMAND:
-        if (LOWORD(wParam) == ID_TRAY_EXIT) {
+        switch (LOWORD(wParam)) {
+        case ID_TRAY_EXIT:
             Shell_NotifyIconW(NIM_DELETE, &g_nid);
             PostQuitMessage(0);
+            break;
+        case ID_TRAY_SET_SAVEDIR: {
+            std::wstring picked = PickFolderDialog(hwnd, ReadSaveDirConfig());
+            if (!picked.empty())
+                WriteSaveDirConfig(picked);
+            break;
+        }
+        case ID_TRAY_CLEAR_SAVEDIR:
+            WriteSaveDirConfig(L"");
+            break;
+        case ID_TRAY_TOGGLE_AUTOFINISH: {
+            bool next = !ReadAutoFinishOnSelectConfig();
+            WriteAutoFinishOnSelectConfig(next);
+            ShowTrayBalloon(L"截图工具",
+                next ? L"框选后立即完成：已开启" : L"框选后立即完成：已关闭");
+            break;
+        }
+        case ID_TRAY_OPEN_CONFIG:
+            ShellExecuteW(hwnd, L"open", GetConfigPath().c_str(),
+                          NULL, NULL, SW_SHOWNORMAL);
+            break;
         }
         break;
     case WM_DESTROY:
@@ -139,6 +194,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
 
     // 读取并解析快捷键配置
     std::wstring hotkeyStr = ReadHotkeyConfig();
+    EnsureConfigDefaults(); // 补齐老版本 config.ini 里缺失的 key
     if (!ParseHotkey(hotkeyStr, &g_hkMod, &g_hkVk)) {
         MessageBoxW(NULL, (L"快捷键配置无效: " + hotkeyStr).c_str(),
                     L"错误", MB_OK | MB_ICONERROR);

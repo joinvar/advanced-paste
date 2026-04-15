@@ -1,6 +1,7 @@
 #include "overlay.h"
 #include "utils.h"
 #include <dwmapi.h>
+#include <shlobj.h>
 #include <algorithm>
 #include <vector>
 #include <cmath>
@@ -240,7 +241,16 @@ static void FinishCapture() {
     g_pendingW = w;
     g_pendingH = h;
 
-    // 同时写入系统剪贴板，让其他应用也能粘贴
+    // 如配置了 SaveDir，直接按 Pattern 命名保存一份到该目录
+    std::wstring saveDir = ReadSaveDirConfig();
+    std::wstring savedPath;
+    if (!saveDir.empty()) {
+        SHCreateDirectoryExW(NULL, saveDir.c_str(), NULL); // 不存在则创建
+        savedPath = SaveBitmapAsPng(g_pendingBmp, w, h, saveDir);
+    }
+
+    // 写入系统剪贴板：CF_BITMAP 给图像类应用；若已自动保存成功，
+    // 额外放一份 CF_UNICODETEXT(绝对路径) 给终端/命令行直接 Ctrl+V 使用
     g_selfClipboard = true;
     if (OpenClipboard(g_hOverlay)) {
         EmptyClipboard();
@@ -255,6 +265,17 @@ static void FinishCapture() {
         DeleteDC(hdcDst2);
         ReleaseDC(NULL, hdcScr2);
         SetClipboardData(CF_BITMAP, hCopy);
+
+        if (!savedPath.empty()) {
+            size_t bytes = (savedPath.size() + 1) * sizeof(wchar_t);
+            HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+            if (hMem) {
+                void* p = GlobalLock(hMem);
+                memcpy(p, savedPath.c_str(), bytes);
+                GlobalUnlock(hMem);
+                SetClipboardData(CF_UNICODETEXT, hMem);
+            }
+        }
         CloseClipboard();
     }
 }

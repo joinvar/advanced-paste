@@ -44,6 +44,7 @@
 Hotkey=Ctrl+Alt+X
 Pattern=
 AutoFinishOnSelect=0
+SaveDir=
 ```
 
 **Hotkey** — 截图快捷键，支持修饰键 `Ctrl`、`Alt`、`Shift`、`Win`，用 `+` 连接，最后一个为主键（A-Z、0-9、F1-F24）。修改后需重启程序生效。即使快捷键被系统占用（如 `Shift+Win+S`），程序也会通过键盘钩子优先拦截。
@@ -55,6 +56,10 @@ AutoFinishOnSelect=0
 **AutoFinishOnSelect** — 框选完成后是否立即结束截图：
 - `0`（默认）— 框选后进入编辑态，需要点击「完成」或在选区外右键结束
 - `1` — 左键抬起后立即完成截图并关闭 overlay，不进入编辑态
+
+**SaveDir** — 自动保存目录，可为空。支持环境变量（如 `%USERPROFILE%\Pictures`），目录不存在时自动创建：
+- _空_（默认）— 保持原流程：截图放入剪贴板，`Ctrl+V` 在资源管理器里粘贴为 PNG
+- _有值_ — 截图完成后立刻按 `Pattern` 命名保存 PNG 到该目录，并把**文件绝对路径**写入剪贴板文本，直接在终端 `Ctrl+V` 即可粘出路径发给命令行工具；同时仍保留图像格式，聊天/图像类应用里 `Ctrl+V` 照常粘成图片
 
 示例：
 

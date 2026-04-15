@@ -93,8 +93,8 @@ std::wstring SaveBitmapAsPng(HBITMAP hBitmap, int w, int h, const std::wstring& 
 
     Gdiplus::Bitmap bmp(hBitmap, NULL);
     CLSID clsid;
-    if (GetEncoderClsid(L"image/png", &clsid) >= 0)
-        bmp.Save(filePath.c_str(), &clsid, NULL);
+    if (GetEncoderClsid(L"image/png", &clsid) < 0) return L"";
+    if (bmp.Save(filePath.c_str(), &clsid, NULL) != Gdiplus::Ok) return L"";
     return filePath;
 }
 
@@ -218,6 +218,9 @@ std::wstring ReadHotkeyConfig() {
         // 同时写入 AutoFinishOnSelect 默认值
         WritePrivateProfileStringW(L"Settings", L"AutoFinishOnSelect",
                                    L"0", cfgPath.c_str());
+        // 同时写入 SaveDir 默认值（空）
+        WritePrivateProfileStringW(L"Settings", L"SaveDir",
+                                   L"", cfgPath.c_str());
         return defaultHotkey;
     }
     return val;
@@ -245,6 +248,82 @@ bool ReadAutoFinishOnSelectConfig() {
     }
 
     return val == L"1" || _wcsicmp(val.c_str(), L"true") == 0;
+}
+
+void EnsureConfigDefaults() {
+    std::wstring cfgPath = GetConfigPath();
+    // 用一个不可能作为正常取值的哨兵，区分 "key 不存在" 与 "key 存在但为空"
+    const wchar_t* SENTINEL = L"\x01__ABSENT__\x01";
+    wchar_t buf[MAX_PATH] = {};
+    GetPrivateProfileStringW(L"Settings", L"SaveDir", SENTINEL,
+                             buf, MAX_PATH, cfgPath.c_str());
+    if (wcscmp(buf, SENTINEL) == 0)
+        WritePrivateProfileStringW(L"Settings", L"SaveDir", L"", cfgPath.c_str());
+}
+
+void WriteSaveDirConfig(const std::wstring& dir) {
+    WritePrivateProfileStringW(L"Settings", L"SaveDir", dir.c_str(),
+                               GetConfigPath().c_str());
+}
+
+void WriteAutoFinishOnSelectConfig(bool value) {
+    WritePrivateProfileStringW(L"Settings", L"AutoFinishOnSelect",
+                               value ? L"1" : L"0", GetConfigPath().c_str());
+}
+
+std::wstring PickFolderDialog(HWND owner, const std::wstring& initialDir) {
+    IFileDialog* pfd = NULL;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL,
+                                IID_PPV_ARGS(&pfd))) || !pfd)
+        return L"";
+
+    std::wstring result;
+    DWORD opts = 0;
+    pfd->GetOptions(&opts);
+    pfd->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
+    pfd->SetTitle(L"选择截图保存目录");
+
+    if (!initialDir.empty()) {
+        IShellItem* psi = NULL;
+        if (SUCCEEDED(SHCreateItemFromParsingName(initialDir.c_str(), NULL,
+                                                  IID_PPV_ARGS(&psi))) && psi) {
+            pfd->SetFolder(psi);
+            psi->Release();
+        }
+    }
+
+    if (SUCCEEDED(pfd->Show(owner))) {
+        IShellItem* psi = NULL;
+        if (SUCCEEDED(pfd->GetResult(&psi)) && psi) {
+            PWSTR path = NULL;
+            if (SUCCEEDED(psi->GetDisplayName(SIGDN_FILESYSPATH, &path)) && path) {
+                result = path;
+                CoTaskMemFree(path);
+            }
+            psi->Release();
+        }
+    }
+    pfd->Release();
+    return result;
+}
+
+std::wstring ReadSaveDirConfig() {
+    std::wstring cfgPath = GetConfigPath();
+    wchar_t buf[MAX_PATH] = {};
+    GetPrivateProfileStringW(L"Settings", L"SaveDir", L"",
+                             buf, MAX_PATH, cfgPath.c_str());
+    std::wstring val(buf);
+    if (val.empty()) return L"";
+
+    // 展开环境变量，如 %USERPROFILE%\Pictures
+    wchar_t expanded[MAX_PATH] = {};
+    DWORD n = ExpandEnvironmentStringsW(val.c_str(), expanded, MAX_PATH);
+    if (n > 0 && n <= MAX_PATH) val = expanded;
+
+    // 去掉末尾的反斜杠和空格，统一由 SaveBitmapAsPng 处理分隔符
+    while (!val.empty() && (val.back() == L' ' || val.back() == L'\\' || val.back() == L'/'))
+        val.pop_back();
+    return val;
 }
 
 static std::wstring ToUpper(const std::wstring& s) {

@@ -27,5 +27,20 @@ std::wstring ReadPatternConfig();
 // 读取框选后是否立即完成（AutoFinishOnSelect），默认 false
 bool ReadAutoFinishOnSelectConfig();
 
+// 读取自动保存目录 SaveDir，已展开环境变量；返回空表示走手动粘贴流程
+std::wstring ReadSaveDirConfig();
+
+// 启动时调用：补齐老版本 config.ini 里缺失的配置项（仅写入缺失的 key，不覆盖已有值）
+void EnsureConfigDefaults();
+
+// 写入 SaveDir（空串表示清除）
+void WriteSaveDirConfig(const std::wstring& dir);
+
+// 写入 AutoFinishOnSelect
+void WriteAutoFinishOnSelectConfig(bool value);
+
+// 弹出系统文件夹选择对话框；取消或失败返回空字符串
+std::wstring PickFolderDialog(HWND owner, const std::wstring& initialDir);
+
 // 解析快捷键字符串为 RegisterHotKey 所需的 modifiers 和 vk
 bool ParseHotkey(const std::wstring& str, UINT* modifiers, UINT* vk);

@@ -44,6 +44,7 @@ On first launch, the program automatically creates `config.ini` next to the exec
 Hotkey=Ctrl+Alt+X
 Pattern=
 AutoFinishOnSelect=0
+SaveDir=
 ```
 
 **Hotkey** - Capture hotkey. Supports modifier keys `Ctrl`, `Alt`, `Shift`, and `Win`, joined by `+`. The last part must be the main key (`A-Z`, `0-9`, `F1-F24`). Restart the app after changing it. Even if the hotkey is occupied by the system (such as `Shift+Win+S`), the app still tries to intercept it through a keyboard hook.
@@ -55,6 +56,10 @@ AutoFinishOnSelect=0
 **AutoFinishOnSelect** - Whether to finish immediately after selection:
 - `0` (default) - Enter edit mode after selecting, then finish by clicking "Done" or right-clicking outside the selection
 - `1` - Finish immediately on left-button release and close the overlay without entering edit mode
+
+**SaveDir** - Auto-save directory. Can be empty. Supports environment variables (e.g. `%USERPROFILE%\Pictures`); the directory is created if missing:
+- _empty_ (default) - Keep the original flow: the screenshot goes to the clipboard, and `Ctrl+V` in File Explorer pastes it as a PNG
+- _non-empty_ - Once a capture finishes, the PNG is immediately saved into this directory using the `Pattern` naming scheme, and the **absolute file path** is placed on the clipboard as text so `Ctrl+V` in a terminal pastes the path directly. The bitmap format is still on the clipboard, so pasting into chat/image apps still works as an image
 
 Examples:
 
