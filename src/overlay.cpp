@@ -337,7 +337,12 @@ static void PaintOverlay(HWND, HDC hdc) {
     int sw = sel.right - sel.left, sh = sel.bottom - sel.top;
     if (sw > 0 && sh > 0) {
         BitBlt(hdcBack, sel.left, sel.top, sw, sh, hdcSrc, sel.left, sel.top, SRCCOPY);
-        DrawGradientBorder(hdcBack, sel, RGB(255, 160, 40), 150, 180);
+        bool hoverHighlight = (g_state == ST_SELECT && !g_dragging);
+        if (hoverHighlight) {
+            DrawGradientBorder(hdcBack, sel, RGB(255, 160, 40), 150, 180);
+        } else {
+            DrawGradientBorder(hdcBack, sel, RGB(120, 200, 255), 30, 200);
+        }
     }
 
     // 编辑模式：绘制标注 + 工具栏
