@@ -381,6 +381,9 @@ static int HitTestToolbar(POINT ptOverlay) {
     return -1;
 }
 
+// overlay 跨屏跟随鼠标的定时器 ID（per-window，与 countdown 的 ID 不冲突）
+#define OVERLAY_FOLLOW_ID  1
+
 // --- 窗口过程 ---
 static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
@@ -538,7 +541,47 @@ static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             }
         }
         return 0;
+    case WM_TIMER:
+        if (wParam == OVERLAY_FOLLOW_ID) {
+            // 只在"选区阶段且未拖拽"时跟随；一旦框选或进入编辑就锁屏
+            if (g_state != ST_SELECT || g_dragging) return 0;
+            POINT cur; GetCursorPos(&cur);
+            HMONITOR hMon = MonitorFromPoint(cur, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO mi = { sizeof(mi) };
+            GetMonitorInfo(hMon, &mi);
+            // 未跨屏：光标还在 overlay 当前所在屏，不动
+            if (mi.rcMonitor.left == g_scrX && mi.rcMonitor.top == g_scrY) return 0;
+
+            // 跨屏：先把 overlay 藏起来再抓新屏，避免拍到 overlay 自己的残影
+            // （overlay 当前还在旧屏，新屏理论上是干净的，但 DWM 合成有时会让
+            //  overlay 的影子短暂出现在边缘，索性 hide 一下保险）
+            ShowWindow(hwnd, SW_HIDE);
+
+            if (g_hScreenBmp) { DeleteObject(g_hScreenBmp); g_hScreenBmp = NULL; }
+            g_scrX = mi.rcMonitor.left;
+            g_scrY = mi.rcMonitor.top;
+            g_scrW = mi.rcMonitor.right  - mi.rcMonitor.left;
+            g_scrH = mi.rcMonitor.bottom - mi.rcMonitor.top;
+
+            HDC hdcScr = GetDC(NULL);
+            HDC hdcMem = CreateCompatibleDC(hdcScr);
+            g_hScreenBmp = CreateCompatibleBitmap(hdcScr, g_scrW, g_scrH);
+            SelectObject(hdcMem, g_hScreenBmp);
+            BitBlt(hdcMem, 0, 0, g_scrW, g_scrH, hdcScr, g_scrX, g_scrY, SRCCOPY);
+            DeleteDC(hdcMem);
+            ReleaseDC(NULL, hdcScr);
+
+            // 旧屏的"窗口高亮矩形"在新屏没意义，清掉
+            SetRectEmpty(&g_rcHighlight);
+
+            // 移到新屏并显示。SWP_SHOWWINDOW 替代单独 ShowWindow，少一次合成
+            SetWindowPos(hwnd, HWND_TOPMOST, g_scrX, g_scrY, g_scrW, g_scrH,
+                         SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            InvalidateRect(hwnd, NULL, FALSE);
+        }
+        return 0;
     case WM_DESTROY:
+        KillTimer(hwnd, OVERLAY_FOLLOW_ID);
         g_hOverlay = NULL;
         g_state = ST_SELECT;
         g_annos.clear();
@@ -730,4 +773,7 @@ void StartCapture(HWND hParent, int delaySec) {
 
     SetForegroundWindow(g_hOverlay);
     SetFocus(g_hOverlay);
+
+    // 100ms 轮询光标位置；跨屏后 overlay 跟到新屏（仅在 ST_SELECT && !g_dragging）
+    SetTimer(g_hOverlay, OVERLAY_FOLLOW_ID, 100, NULL);
 }
