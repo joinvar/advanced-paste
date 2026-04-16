@@ -87,6 +87,13 @@ static void GetWindowRectDwm(HWND hwnd, RECT* rc) {
 
 static BOOL CALLBACK EnumWndProc(HWND hwnd, LPARAM) {
     if (!IsWindowVisible(hwnd)) return TRUE;
+    // 排除 DWM "cloaked" 窗口：UWP 后台、被切走的虚拟桌面、最小化的 Modern App
+    // 等等。这类窗口 IsWindowVisible 仍返 true，但用户视觉上看不到，落到清单
+    // 里会让 hover 命中"鬼影"窗口（典型如纯桌面时框出一个 Realtek 控制台
+    // 的旧位置）
+    BOOL cloaked = FALSE;
+    DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
+    if (cloaked) return TRUE;
     RECT rc;
     GetWindowRectDwm(hwnd, &rc);
     if (rc.right > rc.left && rc.bottom > rc.top)
