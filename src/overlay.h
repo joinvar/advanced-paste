@@ -1,8 +1,8 @@
 #pragma once
 #include <windows.h>
 
-// 启动截图覆盖层
-void StartCapture(HWND hParent);
+// 启动截图覆盖层。delaySec > 0 时先倒计时，再抓取鼠标所在屏
+void StartCapture(HWND hParent, int delaySec = 0);
 
 // 获取待粘贴的截图位图（未裁剪的已裁剪结果），无则返回 NULL
 HBITMAP GetPendingBitmap(int* w, int* h);

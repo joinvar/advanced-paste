@@ -259,6 +259,19 @@ void EnsureConfigDefaults() {
                              buf, MAX_PATH, cfgPath.c_str());
     if (wcscmp(buf, SENTINEL) == 0)
         WritePrivateProfileStringW(L"Settings", L"SaveDir", L"", cfgPath.c_str());
+
+    GetPrivateProfileStringW(L"Settings", L"DelaySeconds", SENTINEL,
+                             buf, MAX_PATH, cfgPath.c_str());
+    if (wcscmp(buf, SENTINEL) == 0)
+        WritePrivateProfileStringW(L"Settings", L"DelaySeconds", L"3", cfgPath.c_str());
+}
+
+int ReadDelaySecondsConfig() {
+    std::wstring cfgPath = GetConfigPath();
+    int v = GetPrivateProfileIntW(L"Settings", L"DelaySeconds", 3, cfgPath.c_str());
+    if (v < 1)  v = 1;
+    if (v > 60) v = 60;
+    return v;
 }
 
 void WriteSaveDirConfig(const std::wstring& dir) {

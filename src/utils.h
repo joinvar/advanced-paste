@@ -30,6 +30,9 @@ bool ReadAutoFinishOnSelectConfig();
 // 读取自动保存目录 SaveDir，已展开环境变量；返回空表示走手动粘贴流程
 std::wstring ReadSaveDirConfig();
 
+// 读取延时截图秒数 DelaySeconds，默认 3，合法范围 1..60
+int ReadDelaySecondsConfig();
+
 // 启动时调用：补齐老版本 config.ini 里缺失的配置项（仅写入缺失的 key，不覆盖已有值）
 void EnsureConfigDefaults();
 

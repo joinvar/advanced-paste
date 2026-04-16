@@ -16,6 +16,7 @@
 #define ID_TRAY_CLEAR_SAVEDIR 1003
 #define ID_TRAY_TOGGLE_AUTOFINISH 1004
 #define ID_TRAY_OPEN_CONFIG   1005
+#define ID_TRAY_DELAY_CAPTURE 1006
 
 static NOTIFYICONDATAW g_nid = {};
 static HWND  g_hwndMain = NULL;
@@ -107,6 +108,11 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
 
             HMENU hMenu = CreatePopupMenu();
 
+            int delaySec = ReadDelaySecondsConfig();
+            std::wstring delayLabel = L"延时 " + std::to_wstring(delaySec) + L" 秒截图";
+            AppendMenuW(hMenu, MF_STRING, ID_TRAY_DELAY_CAPTURE, delayLabel.c_str());
+            AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+
             std::wstring saveDirLabel = L"保存目录: ";
             saveDirLabel += saveDir.empty() ? L"(未设置)" : saveDir;
             AppendMenuW(hMenu, MF_STRING, ID_TRAY_SET_SAVEDIR, saveDirLabel.c_str());
@@ -154,6 +160,9 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             ShellExecuteW(hwnd, L"open", GetConfigPath().c_str(),
                           NULL, NULL, SW_SHOWNORMAL);
             break;
+        case ID_TRAY_DELAY_CAPTURE:
+            StartCapture(hwnd, ReadDelaySecondsConfig());
+            break;
         }
         break;
     case WM_DESTROY:
@@ -166,7 +175,14 @@ static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
 }
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
-    SetProcessDPIAware();
+    // 优先开启 Per-Monitor DPI V2（Win10 1703+），让每块屏各自用真实 DPI，
+    // 避免跨屏截图时因缩放差异被位图拉伸。失败则退回 System DPI Aware。
+    typedef BOOL (WINAPI *PFN_SetProcessDpiAwarenessContext)(HANDLE);
+    HMODULE hUser = GetModuleHandleW(L"user32.dll");
+    auto pSetCtx = hUser ? (PFN_SetProcessDpiAwarenessContext)
+        GetProcAddress(hUser, "SetProcessDpiAwarenessContext") : NULL;
+    if (!pSetCtx || !pSetCtx((HANDLE)-4 /* DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 */))
+        SetProcessDPIAware();
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
     HANDLE hMutex = CreateMutexW(NULL, TRUE, L"AdvancedPaste_SingleInstance");

@@ -50,6 +50,10 @@ static HBITMAP  g_pendingBmp = NULL;
 static int      g_pendingW = 0, g_pendingH = 0;
 static bool     g_selfClipboard = false; // 标记本程序正在写入剪贴板
 
+// 目标屏闪烁边框
+static bool     g_borderFlashOn = true;
+#define OVERLAY_FLASH_ID 1
+
 HBITMAP GetPendingBitmap(int* w, int* h) {
     if (w) *w = g_pendingW;
     if (h) *h = g_pendingH;
@@ -370,6 +374,21 @@ static void PaintOverlay(HWND, HDC hdc) {
         DeleteObject(hFont);
     }
 
+    // 目标屏闪烁边框：选区阶段绕着屏幕 4 边画橙色色带
+    if (g_state == ST_SELECT && g_borderFlashOn) {
+        const int T = 8;
+        HBRUSH hBrO = CreateSolidBrush(RGB(255, 160, 40));
+        RECT rT = { 0, 0, g_scrW, T };
+        RECT rB = { 0, g_scrH - T, g_scrW, g_scrH };
+        RECT rL = { 0, 0, T, g_scrH };
+        RECT rR = { g_scrW - T, 0, g_scrW, g_scrH };
+        FillRect(hdcBack, &rT, hBrO);
+        FillRect(hdcBack, &rB, hBrO);
+        FillRect(hdcBack, &rL, hBrO);
+        FillRect(hdcBack, &rR, hBrO);
+        DeleteObject(hBrO);
+    }
+
     BitBlt(hdc, 0, 0, g_scrW, g_scrH, hdcBack, 0, 0, SRCCOPY);
     SelectObject(hdcSrc, hbmOldSrc); DeleteDC(hdcSrc);
     SelectObject(hdcBack, hbmOldBack); DeleteObject(hbmBack); DeleteDC(hdcBack);
@@ -496,12 +515,22 @@ static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         return 0;
     }
     case WM_RBUTTONDOWN:
-        if (g_state == ST_EDIT) {
+        // 吃掉 down，避免 DestroyWindow 后 up 落到桌面触发上下文菜单
+        return 0;
+    case WM_RBUTTONUP:
+        if (g_state == ST_SELECT) {
+            // 选区阶段右键 = 取消
+            g_dragging = FALSE;
+            DestroyWindow(hwnd);
+        } else if (g_state == ST_EDIT) {
             POINT ptClick;
             GetCursorPos(&ptClick);
             if (PtInRect(&g_selRect, ptClick)) {
-                // 选区内：撤销最后一个标注
-                if (!g_annos.empty()) {
+                if (g_annos.empty()) {
+                    // 选区内无标注：右键 = 取消
+                    DestroyWindow(hwnd);
+                } else {
+                    // 选区内有标注：撤销最后一个
                     g_annos.pop_back();
                     InvalidateRect(hwnd, NULL, FALSE);
                 }
@@ -527,7 +556,14 @@ static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             }
         }
         return 0;
+    case WM_TIMER:
+        if (wParam == OVERLAY_FLASH_ID) {
+            g_borderFlashOn = !g_borderFlashOn;
+            InvalidateRect(hwnd, NULL, FALSE);
+        }
+        return 0;
     case WM_DESTROY:
+        KillTimer(hwnd, OVERLAY_FLASH_ID);
         g_hOverlay = NULL;
         g_state = ST_SELECT;
         g_annos.clear();
@@ -538,8 +574,134 @@ static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
-void StartCapture(HWND hParent) {
-    if (g_hOverlay) return;
+// --- 倒计时窗口 ---
+static HWND g_hCountdown = NULL;
+static int  g_countdownLeft = 0;
+static HWND g_countdownParent = NULL;
+#define COUNTDOWN_TICK_ID  1
+#define COUNTDOWN_FIRE_ID  2
+#define COUNTDOWN_MOVE_ID  3
+
+static LRESULT CALLBACK CountdownProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc; GetClientRect(hwnd, &rc);
+        HBRUSH hBr = CreateSolidBrush(RGB(30, 30, 30));
+        FillRect(hdc, &rc, hBr); DeleteObject(hBr);
+        HPEN hPen = CreatePen(PS_SOLID, 3, RGB(0, 174, 255));
+        HPEN hOP = (HPEN)SelectObject(hdc, hPen);
+        HBRUSH hOB = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        Rectangle(hdc, 0, 0, rc.right, rc.bottom);
+        SelectObject(hdc, hOP); SelectObject(hdc, hOB); DeleteObject(hPen);
+        HFONT hFont = CreateFontW(120, 0, 0, 0, FW_BOLD, 0, 0, 0,
+            DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Microsoft YaHei");
+        HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(255, 255, 255));
+        wchar_t buf[8]; swprintf_s(buf, L"%d", g_countdownLeft);
+        DrawTextW(hdc, buf, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(hdc, hOldFont); DeleteObject(hFont);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_TIMER:
+        if (wParam == COUNTDOWN_TICK_ID) {
+            g_countdownLeft--;
+            if (g_countdownLeft <= 0) {
+                KillTimer(hwnd, COUNTDOWN_TICK_ID);
+                KillTimer(hwnd, COUNTDOWN_MOVE_ID);
+                ShowWindow(hwnd, SW_HIDE);
+                // 让 DWM 合成后再抓屏，避免数字被拍进截图
+                SetTimer(hwnd, COUNTDOWN_FIRE_ID, 80, NULL);
+            } else {
+                InvalidateRect(hwnd, NULL, TRUE);
+            }
+        } else if (wParam == COUNTDOWN_MOVE_ID) {
+            // 跟随鼠标所在屏
+            POINT pt; GetCursorPos(&pt);
+            HMONITOR hMon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO mi = { sizeof(mi) };
+            GetMonitorInfo(hMon, &mi);
+            RECT rc; GetWindowRect(hwnd, &rc);
+            int w = rc.right - rc.left;
+            int monW = mi.rcMonitor.right - mi.rcMonitor.left;
+            int newX = mi.rcMonitor.left + (monW - w) / 2;
+            int newY = mi.rcMonitor.top  + 60;
+            if (rc.left != newX || rc.top != newY) {
+                SetWindowPos(hwnd, HWND_TOPMOST, newX, newY, 0, 0,
+                             SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+        } else if (wParam == COUNTDOWN_FIRE_ID) {
+            KillTimer(hwnd, COUNTDOWN_FIRE_ID);
+            HWND parent = g_countdownParent;
+            DestroyWindow(hwnd);
+            StartCapture(parent, 0);
+        }
+        return 0;
+    case WM_DESTROY:
+        g_hCountdown = NULL;
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+static void StartCountdown(HWND hParent, int seconds) {
+    if (g_hCountdown) return;
+    g_countdownParent = hParent;
+    g_countdownLeft = seconds;
+
+    POINT pt; GetCursorPos(&pt);
+    HMONITOR hMon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfo(hMon, &mi);
+
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSEXW wc = { sizeof(wc) };
+        wc.lpfnWndProc = CountdownProc;
+        wc.hInstance = GetModuleHandleW(NULL);
+        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        wc.lpszClassName = L"AdvPasteCountdown";
+        if (!RegisterClassExW(&wc)) {
+            StartCapture(hParent, 0);
+            return;
+        }
+        registered = true;
+    }
+
+    const int W = 180, H = 180;
+    int monW = mi.rcMonitor.right - mi.rcMonitor.left;
+    int x = mi.rcMonitor.left + (monW - W) / 2;
+    int y = mi.rcMonitor.top  + 60;
+
+    g_hCountdown = CreateWindowExW(
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+        L"AdvPasteCountdown", NULL,
+        WS_POPUP,
+        x, y, W, H,
+        NULL, NULL, GetModuleHandleW(NULL), NULL);
+
+    if (!g_hCountdown) {
+        StartCapture(hParent, 0);
+        return;
+    }
+
+    ShowWindow(g_hCountdown, SW_SHOWNOACTIVATE);
+    SetWindowPos(g_hCountdown, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    UpdateWindow(g_hCountdown);
+    SetTimer(g_hCountdown, COUNTDOWN_TICK_ID, 1000, NULL);
+    SetTimer(g_hCountdown, COUNTDOWN_MOVE_ID, 100, NULL);
+}
+
+void StartCapture(HWND hParent, int delaySec) {
+    if (g_hOverlay || g_hCountdown) return;
+    if (delaySec > 0) { StartCountdown(hParent, delaySec); return; }
     g_hParent = hParent;
     g_state = ST_SELECT;
     g_dragging = FALSE;
@@ -550,10 +712,15 @@ void StartCapture(HWND hParent) {
     SetRectEmpty(&g_rcHighlight);
     SetRectEmpty(&g_selRect);
 
-    g_scrX = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    g_scrY = GetSystemMetrics(SM_YVIRTUALSCREEN);
-    g_scrW = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-    g_scrH = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    // 只抓鼠标所在那块屏
+    POINT cur; GetCursorPos(&cur);
+    HMONITOR hMon = MonitorFromPoint(cur, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfo(hMon, &mi);
+    g_scrX = mi.rcMonitor.left;
+    g_scrY = mi.rcMonitor.top;
+    g_scrW = mi.rcMonitor.right  - mi.rcMonitor.left;
+    g_scrH = mi.rcMonitor.bottom - mi.rcMonitor.top;
 
     HDC hdcScreen = GetDC(NULL);
     HDC hdcMem = CreateCompatibleDC(hdcScreen);
@@ -586,4 +753,7 @@ void StartCapture(HWND hParent) {
 
     SetForegroundWindow(g_hOverlay);
     SetFocus(g_hOverlay);
+
+    g_borderFlashOn = true;
+    SetTimer(g_hOverlay, OVERLAY_FLASH_ID, 450, NULL);
 }
