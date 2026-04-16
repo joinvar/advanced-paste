@@ -123,6 +123,12 @@ sleep 0.8
 wait $LOOP_PID
 ```
 
+上面的流程已经封装成可复跑脚本：
+- `scripts/e2e_overlay_capture.sh` — git-bash 下运行
+- `scripts/e2e_overlay_capture.bat` — Windows cmd 下运行
+
+脚本会自动启动 GUI（如未运行）、连拍、注入键鼠，并在结束时检查帧数与尺寸分段判断 overlay 是否被成功触发。运行期间屏幕会短暂出现 overlay（约 3 秒），期间请勿移动鼠标键盘。
+
 ### 坐标系约定
 
 - `capture --rect` / `send-mouse move X,Y`：默认为**全局虚拟屏坐标**（多屏时可为负）

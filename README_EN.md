@@ -123,6 +123,12 @@ sleep 0.8
 wait $LOOP_PID
 ```
 
+The same flow is packaged as reusable scripts:
+- `scripts/e2e_overlay_capture.sh` — for git-bash
+- `scripts/e2e_overlay_capture.bat` — for Windows cmd
+
+Each script auto-starts the GUI (if not already running), runs the loop capture, injects input, and at the end checks the frame count and size variation to verify that the overlay was actually triggered. Expect the overlay to appear on screen for ~3 seconds; don't touch the keyboard or mouse during the run.
+
 ### Coordinate conventions
 
 - `capture --rect` / `send-mouse move X,Y`: **global virtual-desktop** coordinates by default (can be negative on multi-monitor setups)
