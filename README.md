@@ -12,7 +12,7 @@
 ## 使用流程
 
 1. 运行 `AdvancedPaste.exe`，程序常驻系统托盘
-2. 按 `Ctrl+Alt+X` 进入截图模式，屏幕冻结并变暗
+2. 按 `Ctrl+Alt+X` 进入截图模式，光标所在屏冻结并变暗；多屏环境下，未开始框选前 overlay 会跟随光标跨屏迁移
 3. **选择区域**：
    - 移动鼠标，自动高亮光标所在窗口，单击即可选中
    - 或按住左键拖拽，自由选择矩形区域
@@ -124,10 +124,12 @@ wait $LOOP_PID
 ```
 
 上面的流程已经封装成可复跑脚本：
-- `scripts/e2e_overlay_capture.sh` — git-bash 下运行
-- `scripts/e2e_overlay_capture.bat` — Windows cmd 下运行
+- `scripts/e2e_overlay_capture.sh` — 跨屏截图流程（git-bash 下运行）
+- `scripts/e2e_overlay_capture.bat` — 同上的 Windows cmd 版本
+- `scripts/e2e_overlay_hover.bat` — 单屏 hover 高亮流程，观察光标在不同位置时窗口高亮的变化
+- `scripts/run_all_tests.bat` — 一键串起 build + 单元测试 + 上述所有 e2e 脚本，末尾输出 PASS/FAIL 汇总，退出码非 0 表示失败（可接 CI）
 
-脚本会自动启动 GUI（如未运行）、连拍、注入键鼠，并在结束时检查帧数与尺寸分段判断 overlay 是否被成功触发。运行期间屏幕会短暂出现 overlay（约 3 秒），期间请勿移动鼠标键盘。
+脚本会自动启动 GUI（如未运行）、连拍、注入键鼠，并在结束时检查帧数与尺寸分段判断 overlay 是否被成功触发。运行期间屏幕会短暂出现 overlay（约 3-5 秒），期间请勿移动鼠标键盘。
 
 ### 坐标系约定
 

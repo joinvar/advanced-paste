@@ -12,7 +12,7 @@
 ## Workflow
 
 1. Run `AdvancedPaste.exe`; the app stays in the system tray
-2. Press `Ctrl+Alt+X` to enter capture mode; the screen freezes and dims
+2. Press `Ctrl+Alt+X` to enter capture mode; the screen under the cursor freezes and dims. On a multi-monitor setup the overlay follows the cursor across monitors as long as no selection has started yet
 3. **Select an area**:
    - Move the mouse to auto-highlight the window under the cursor, then click to select it
    - Or drag with the left mouse button to select any rectangular region
@@ -124,10 +124,12 @@ wait $LOOP_PID
 ```
 
 The same flow is packaged as reusable scripts:
-- `scripts/e2e_overlay_capture.sh` — for git-bash
-- `scripts/e2e_overlay_capture.bat` — for Windows cmd
+- `scripts/e2e_overlay_capture.sh` — cross-monitor capture flow (for git-bash)
+- `scripts/e2e_overlay_capture.bat` — same flow, for Windows cmd
+- `scripts/e2e_overlay_hover.bat` — single-monitor hover flow: observe how the highlight rectangle tracks the cursor as it moves across windows
+- `scripts/run_all_tests.bat` — one-shot wrapper that chains build + unit tests + every e2e script above, prints a PASS/FAIL summary, and returns a non-zero exit code on failure (CI-friendly)
 
-Each script auto-starts the GUI (if not already running), runs the loop capture, injects input, and at the end checks the frame count and size variation to verify that the overlay was actually triggered. Expect the overlay to appear on screen for ~3 seconds; don't touch the keyboard or mouse during the run.
+Each script auto-starts the GUI (if not already running), runs the loop capture, injects input, and at the end checks the frame count and size variation to verify that the overlay was actually triggered. Expect the overlay to appear on screen for ~3-5 seconds; don't touch the keyboard or mouse during the run.
 
 ### Coordinate conventions
 
