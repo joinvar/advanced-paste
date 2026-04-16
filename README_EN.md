@@ -80,4 +80,53 @@ cmake -G "Visual Studio 17 2022" -A x64 ..
 cmake --build . --config Release
 ```
 
-Output: `build\Release\AdvancedPaste.exe`
+Outputs:
+- `build\Release\AdvancedPaste.exe` — GUI tray app
+- `build\Release\AdvancedPasteCli.exe` — Command-line tool (see the next section)
+
+## Command-Line Tool (AdvancedPasteCli)
+
+A standalone console program for scripted screenshots, config access, and input injection. Primarily aimed at automated testing and debugging (e.g. letting AI assistants / scripts reproducibly trigger and record every frame of the overlay).
+
+### Subcommands
+
+| Command | Purpose |
+|---|---|
+| `config show` \| `config get KEY` \| `config set KEY VALUE` | Read/write `config.ini` |
+| `list-monitors` | JSON list of all monitors (index/coords/primary/dpi) |
+| `capture --fullscreen` \| `--monitor N` \| `--rect X,Y,W,H` `--out FILE` | Non-interactive screenshot to PNG |
+| `capture ... --loop N --interval MS --out-dir DIR [--out-prefix P]` | Time-lapse frame sequence |
+| `render-overlay --rect X,Y,W,H --out FILE [--monitor N]` | Offscreen rendering of the overlay selection look (screen snapshot + dim mask + selection cutout + orange gradient border) |
+| `send-keys <COMBO>` | Keyboard injection (e.g. `ctrl+alt+x`, `esc`, `f5`) |
+| `send-mouse move` \| `click` \| `down` \| `up` \| `drag` `[--button B]` `[--monitor N]` | Mouse injection |
+
+### Example: automated overlay capture flow
+
+Start the loop capture, inject the hotkey, simulate a drag selection, then press ESC — every frame from overlay appearance to teardown is recorded:
+
+```bash
+CLI="build/Release/AdvancedPasteCli.exe"
+OUT="build/Release/e2e_out"
+mkdir -p "$OUT"
+
+# 15 frames x 250 ms ~= 3.75 s in the background
+"$CLI" capture --monitor 1 --loop 15 --interval 250 --out-dir "$OUT" --out-prefix f_ &
+LOOP_PID=$!
+
+sleep 0.3
+"$CLI" send-keys "ctrl+alt+x"
+sleep 0.6
+"$CLI" send-mouse drag 400,300 1300,800 --monitor 1
+sleep 0.8
+"$CLI" send-keys "esc"
+
+wait $LOOP_PID
+```
+
+### Coordinate conventions
+
+- `capture --rect` / `send-mouse move X,Y`: **global virtual-desktop** coordinates by default (can be negative on multi-monitor setups)
+- With `--monitor N`: coordinates are treated as **monitor-local** (with `(0, 0)` at the monitor's top-left); the CLI applies the offset automatically
+- Use `list-monitors` to check monitor indices and coordinates first
+
+Run with no arguments or `--help` for the full usage.

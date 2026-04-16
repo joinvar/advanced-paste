@@ -80,4 +80,53 @@ cmake -G "Visual Studio 17 2022" -A x64 ..
 cmake --build . --config Release
 ```
 
-生成文件：`build\Release\AdvancedPaste.exe`
+生成文件：
+- `build\Release\AdvancedPaste.exe` — 托盘 GUI 主程序
+- `build\Release\AdvancedPasteCli.exe` — 命令行工具（见下一节）
+
+## 命令行工具 (AdvancedPasteCli)
+
+独立的 console 程序，用于脚本化截图、读写配置、模拟键鼠。主要服务于自动化测试与调试（例如让 AI 助手/脚本可重现地触发并记录 overlay 的每一帧状态）。
+
+### 子命令
+
+| 命令 | 作用 |
+|---|---|
+| `config show` \| `config get KEY` \| `config set KEY VALUE` | 读写 `config.ini` |
+| `list-monitors` | JSON 输出所有显示器（index/坐标/primary/dpi） |
+| `capture --fullscreen` \| `--monitor N` \| `--rect X,Y,W,H` `--out FILE` | 无交互截图存 PNG |
+| `capture ... --loop N --interval MS --out-dir DIR [--out-prefix P]` | 按间隔连拍序列帧 |
+| `render-overlay --rect X,Y,W,H --out FILE [--monitor N]` | 离屏复现 overlay 选区视觉（屏幕快照 + 暗遮罩 + 选区原图 + 橙色渐变边框） |
+| `send-keys <COMBO>` | 模拟键盘（如 `ctrl+alt+x`、`esc`、`f5`） |
+| `send-mouse move` \| `click` \| `down` \| `up` \| `drag` `[--button B]` `[--monitor N]` | 模拟鼠标 |
+
+### 典型用法：自动化采集 overlay 全过程
+
+开连拍、模拟快捷键、模拟框选、ESC 取消——记录 overlay 从出现到销毁的每一帧：
+
+```bash
+CLI="build/Release/AdvancedPasteCli.exe"
+OUT="build/Release/e2e_out"
+mkdir -p "$OUT"
+
+# 后台连拍 15 帧 × 250ms ≈ 3.75 秒
+"$CLI" capture --monitor 1 --loop 15 --interval 250 --out-dir "$OUT" --out-prefix f_ &
+LOOP_PID=$!
+
+sleep 0.3
+"$CLI" send-keys "ctrl+alt+x"
+sleep 0.6
+"$CLI" send-mouse drag 400,300 1300,800 --monitor 1
+sleep 0.8
+"$CLI" send-keys "esc"
+
+wait $LOOP_PID
+```
+
+### 坐标系约定
+
+- `capture --rect` / `send-mouse move X,Y`：默认为**全局虚拟屏坐标**（多屏时可为负）
+- 指定 `--monitor N` 后：坐标视作**该屏局部坐标**（左上角为 0,0），CLI 自动偏移
+- 先用 `list-monitors` 查看显示器 index 与坐标
+
+不带参数或 `--help` 查看完整帮助。
