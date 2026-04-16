@@ -4,7 +4,7 @@ project(AdvancedPaste LANGUAGES CXX RC)
 set(CMAKE_CXX_STANDARD 17)
 
 # --- 工具函数静态库（主程序和测试共用）---
-add_library(AdvancedPasteLib STATIC src/utils.cpp src/render.cpp)
+add_library(AdvancedPasteLib STATIC src/utils.cpp src/render.cpp src/cli_args.cpp)
 target_include_directories(AdvancedPasteLib PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(AdvancedPasteLib PUBLIC UNICODE _UNICODE NOMINMAX)
 target_link_libraries(AdvancedPasteLib PUBLIC gdiplus shell32 ole32 oleaut32 shlwapi msimg32)
@@ -42,7 +42,7 @@ if(BUILD_TESTING)
     FetchContent_MakeAvailable(googletest)
 
     enable_testing()
-    add_executable(AdvancedPasteTests tests/test_utils.cpp)
+    add_executable(AdvancedPasteTests tests/test_utils.cpp tests/test_cli_args.cpp)
     target_link_libraries(AdvancedPasteTests PRIVATE AdvancedPasteLib GTest::gtest_main)
     if(MSVC)
         target_compile_options(AdvancedPasteTests PRIVATE /utf-8)

@@ -5,6 +5,7 @@
 #include <shlwapi.h>
 #include "utils.h"
 #include "render.h"
+#include "cli_args.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -38,47 +39,14 @@ static void WriteHandleW(DWORD stdId, const std::wstring& s, bool addNewline) {
 static void WriteOutLn(const std::wstring& s) { WriteHandleW(STD_OUTPUT_HANDLE, s, true); }
 static void WriteErrLn(const std::wstring& s) { WriteHandleW(STD_ERROR_HANDLE, s, true); }
 
-// ===== JSON 转义 =====
-static std::wstring JsonEscape(const std::wstring& s) {
-    std::wstring r;
-    r.reserve(s.size() + 2);
-    for (wchar_t c : s) {
-        if (c == L'"' || c == L'\\') { r += L'\\'; r += c; }
-        else if (c == L'\n') r += L"\\n";
-        else if (c == L'\r') r += L"\\r";
-        else if (c == L'\t') r += L"\\t";
-        else if (c < 0x20) {
-            wchar_t buf[8];
-            swprintf_s(buf, 8, L"\\u%04x", (unsigned)c);
-            r += buf;
-        } else {
-            r += c;
-        }
-    }
-    return r;
-}
+// JSON 转义、ParseRect / ParseXY / ParseKeyName / ParseButton /
+// FindOpt / HasFlag 都在 cli_args.h 里共享（方便 gtest 覆盖）。
 
 static std::wstring ToAbsPath(const std::wstring& path) {
     wchar_t buf[MAX_PATH];
     DWORD n = GetFullPathNameW(path.c_str(), MAX_PATH, buf, NULL);
     if (n == 0 || n >= MAX_PATH) return path;
     return std::wstring(buf, n);
-}
-
-// ===== 参数解析 =====
-static const wchar_t* FindOpt(int argc, wchar_t** argv, const wchar_t* name) {
-    for (int i = 0; i < argc; i++)
-        if (wcscmp(argv[i], name) == 0 && i + 1 < argc) return argv[i + 1];
-    return NULL;
-}
-static bool HasFlag(int argc, wchar_t** argv, const wchar_t* name) {
-    for (int i = 0; i < argc; i++)
-        if (wcscmp(argv[i], name) == 0) return true;
-    return false;
-}
-static bool ParseRect(const wchar_t* s, int* x, int* y, int* w, int* h) {
-    if (!s) return false;
-    return swscanf_s(s, L"%d,%d,%d,%d", x, y, w, h) == 4;
 }
 
 // ===== config 子命令 =====
@@ -391,35 +359,6 @@ static int CmdRenderOverlay(int argc, wchar_t** argv) {
 }
 
 // ===== send-keys 子命令 =====
-static bool ParseKeyName(std::wstring name, WORD* vk) {
-    for (auto& c : name) c = towlower(c);
-    if (name == L"ctrl" || name == L"control") { *vk = VK_CONTROL; return true; }
-    if (name == L"alt"  || name == L"menu")    { *vk = VK_MENU;    return true; }
-    if (name == L"shift")                       { *vk = VK_SHIFT;   return true; }
-    if (name == L"win"  || name == L"super")   { *vk = VK_LWIN;    return true; }
-    if (name == L"esc"  || name == L"escape")  { *vk = VK_ESCAPE;  return true; }
-    if (name == L"enter"|| name == L"return")  { *vk = VK_RETURN;  return true; }
-    if (name == L"tab")                         { *vk = VK_TAB;     return true; }
-    if (name == L"space")                       { *vk = VK_SPACE;   return true; }
-    if (name == L"backspace" || name == L"back"){ *vk = VK_BACK;    return true; }
-    if (name == L"delete"|| name == L"del")    { *vk = VK_DELETE;  return true; }
-    if (name == L"up")    { *vk = VK_UP;    return true; }
-    if (name == L"down")  { *vk = VK_DOWN;  return true; }
-    if (name == L"left")  { *vk = VK_LEFT;  return true; }
-    if (name == L"right") { *vk = VK_RIGHT; return true; }
-    if (name == L"home")  { *vk = VK_HOME;  return true; }
-    if (name == L"end")   { *vk = VK_END;   return true; }
-    if (name == L"pageup")   { *vk = VK_PRIOR; return true; }
-    if (name == L"pagedown") { *vk = VK_NEXT;  return true; }
-    if (name.size() >= 2 && name[0] == L'f' && iswdigit(name[1])) {
-        int n = _wtoi(name.c_str() + 1);
-        if (n >= 1 && n <= 24) { *vk = (WORD)(VK_F1 + n - 1); return true; }
-    }
-    if (name.size() == 1 && name[0] >= L'a' && name[0] <= L'z') { *vk = (WORD)towupper(name[0]); return true; }
-    if (name.size() == 1 && name[0] >= L'0' && name[0] <= L'9') { *vk = (WORD)name[0]; return true; }
-    return false;
-}
-
 static int CmdSendKeys(int argc, wchar_t** argv) {
     if (argc < 3) {
         WriteErrLn(L"send-keys: combo required (e.g. 'ctrl+alt+x')");
@@ -487,16 +426,6 @@ static void InjectMouseBtn(DWORD flag) {
     in.type = INPUT_MOUSE;
     in.mi.dwFlags = flag;
     SendInput(1, &in, sizeof(in));
-}
-static bool ParseButton(const wchar_t* s, DWORD* downFlag, DWORD* upFlag) {
-    if (!s || wcscmp(s, L"left") == 0)   { *downFlag = MOUSEEVENTF_LEFTDOWN;   *upFlag = MOUSEEVENTF_LEFTUP;   return true; }
-    if (wcscmp(s, L"right") == 0)        { *downFlag = MOUSEEVENTF_RIGHTDOWN;  *upFlag = MOUSEEVENTF_RIGHTUP;  return true; }
-    if (wcscmp(s, L"middle") == 0)       { *downFlag = MOUSEEVENTF_MIDDLEDOWN; *upFlag = MOUSEEVENTF_MIDDLEUP; return true; }
-    return false;
-}
-static bool ParseXY(const wchar_t* s, int* x, int* y) {
-    if (!s) return false;
-    return swscanf_s(s, L"%d,%d", x, y) == 2;
 }
 // 若指定了 --monitor，则把 x,y 从该屏局部坐标偏移到全局虚拟屏坐标
 static bool ApplyMonitorOffset(int argc, wchar_t** argv, int* x, int* y) {
