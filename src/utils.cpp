@@ -80,7 +80,7 @@ static std::wstring ExpandPattern(const std::wstring& pattern) {
 }
 
 std::wstring SaveBitmapAsPng(HBITMAP hBitmap, int w, int h, const std::wstring& dir) {
-    if (!hBitmap || w <= 0 || h <= 0) return L"";
+    if (!hBitmap || w <= 0 || h <= 0 || dir.empty()) return L"";
 
     // 在目标目录中查找下一个可用编号
     std::wstring base = dir;

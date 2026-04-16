@@ -255,8 +255,8 @@ static void FinishCapture() {
 
     // 写入系统剪贴板：CF_BITMAP 给图像类应用；若已自动保存成功，
     // 额外放一份 CF_UNICODETEXT(绝对路径) 给终端/命令行直接 Ctrl+V 使用
-    g_selfClipboard = true;
     if (OpenClipboard(g_hOverlay)) {
+        g_selfClipboard = true;
         EmptyClipboard();
         HDC hdcScr2 = GetDC(NULL);
         HDC hdcSrc2 = CreateCompatibleDC(hdcScr2);
@@ -298,13 +298,14 @@ static void PaintOverlay(HWND, HDC hdc) {
     // 半透明遮罩
     HDC hdcDim = CreateCompatibleDC(hdc);
     HBITMAP hbmDim = CreateCompatibleBitmap(hdc, g_scrW, g_scrH);
-    SelectObject(hdcDim, hbmDim);
+    HBITMAP hbmOldDim = (HBITMAP)SelectObject(hdcDim, hbmDim);
     HBRUSH hBrB = CreateSolidBrush(RGB(0, 0, 0));
     RECT rcF = { 0, 0, g_scrW, g_scrH };
     FillRect(hdcDim, &rcF, hBrB);
     DeleteObject(hBrB);
     BLENDFUNCTION bf = { AC_SRC_OVER, 0, 100, 0 };
     AlphaBlend(hdcBack, 0, 0, g_scrW, g_scrH, hdcDim, 0, 0, g_scrW, g_scrH, bf);
+    SelectObject(hdcDim, hbmOldDim);
     DeleteObject(hbmDim);
     DeleteDC(hdcDim);
 
@@ -404,6 +405,8 @@ static int HitTestToolbar(POINT ptOverlay) {
 // --- 窗口过程 ---
 static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
+    case WM_ERASEBKGND:
+        return 1;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
@@ -750,6 +753,8 @@ void StartCapture(HWND hParent, int delaySec) {
         WS_POPUP | WS_VISIBLE,
         g_scrX, g_scrY, g_scrW, g_scrH,
         NULL, NULL, GetModuleHandleW(NULL), NULL);
+
+    if (!g_hOverlay) return;
 
     SetForegroundWindow(g_hOverlay);
     SetFocus(g_hOverlay);
