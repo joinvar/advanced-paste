@@ -50,9 +50,6 @@ static HBITMAP  g_pendingBmp = NULL;
 static int      g_pendingW = 0, g_pendingH = 0;
 static bool     g_selfClipboard = false; // 标记本程序正在写入剪贴板
 
-// 目标屏闪烁边框
-static bool     g_borderFlashOn = true;
-#define OVERLAY_FLASH_ID 1
 
 HBITMAP GetPendingBitmap(int* w, int* h) {
     if (w) *w = g_pendingW;
@@ -284,6 +281,56 @@ static void FinishCapture() {
     }
 }
 
+// 渐变边框：从边缘向内逐渐变淡
+static void DrawGradientBorder(HDC hdc, const RECT& sel, COLORREF color,
+                               int borderW, BYTE maxAlpha) {
+    int cr = GetRValue(color), cg = GetGValue(color), cb = GetBValue(color);
+    int selW = sel.right - sel.left;
+    int selH = sel.bottom - sel.top;
+    if (selW <= 0 || selH <= 0 || borderW <= 0) return;
+    borderW = (std::min)(borderW, (std::min)(selW, selH) / 2);
+    if (borderW <= 0) return;
+
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = selW;
+    bmi.bmiHeader.biHeight = -selH;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    BYTE* bits = nullptr;
+    HBITMAP hBmp = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS,
+                                    (void**)&bits, NULL, 0);
+    if (!hBmp || !bits) return;
+    memset(bits, 0, (size_t)selW * selH * 4);
+
+    for (int row = 0; row < selH; row++) {
+        int dY = (std::min)(row, selH - 1 - row);
+        for (int col = 0; col < selW; col++) {
+            int dX = (std::min)(col, selW - 1 - col);
+            int d = (std::min)(dY, dX);
+            if (d >= borderW) continue;
+            double t = (double)d / borderW;
+            int a = (int)(maxAlpha * (1.0 + cos(t * 3.14159265)) / 2.0);
+            int idx = (row * selW + col) * 4;
+            bits[idx]     = (BYTE)(cb * a / 255);
+            bits[idx + 1] = (BYTE)(cg * a / 255);
+            bits[idx + 2] = (BYTE)(cr * a / 255);
+            bits[idx + 3] = (BYTE)a;
+        }
+    }
+
+    HDC hdcBmp = CreateCompatibleDC(hdc);
+    HBITMAP hOld = (HBITMAP)SelectObject(hdcBmp, hBmp);
+    BLENDFUNCTION bf = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+    AlphaBlend(hdc, sel.left, sel.top, selW, selH,
+               hdcBmp, 0, 0, selW, selH, bf);
+    SelectObject(hdcBmp, hOld);
+    DeleteDC(hdcBmp);
+    DeleteObject(hBmp);
+}
+
 // --- 绘制 ---
 static void PaintOverlay(HWND, HDC hdc) {
     HDC hdcBack = CreateCompatibleDC(hdc);
@@ -332,12 +379,7 @@ static void PaintOverlay(HWND, HDC hdc) {
     int sw = sel.right - sel.left, sh = sel.bottom - sel.top;
     if (sw > 0 && sh > 0) {
         BitBlt(hdcBack, sel.left, sel.top, sw, sh, hdcSrc, sel.left, sel.top, SRCCOPY);
-        HPEN hPen = CreatePen(PS_SOLID, 2, RGB(0, 174, 255));
-        HPEN hOP = (HPEN)SelectObject(hdcBack, hPen);
-        HBRUSH hOB = (HBRUSH)SelectObject(hdcBack, GetStockObject(NULL_BRUSH));
-        Rectangle(hdcBack, sel.left, sel.top, sel.right, sel.bottom);
-        SelectObject(hdcBack, hOP); SelectObject(hdcBack, hOB);
-        DeleteObject(hPen);
+        DrawGradientBorder(hdcBack, sel, RGB(255, 160, 40), 150, 180);
     }
 
     // 编辑模式：绘制标注 + 工具栏
@@ -375,20 +417,6 @@ static void PaintOverlay(HWND, HDC hdc) {
         DeleteObject(hFont);
     }
 
-    // 目标屏闪烁边框：选区阶段绕着屏幕 4 边画橙色色带
-    if (g_state == ST_SELECT && g_borderFlashOn) {
-        const int T = 8;
-        HBRUSH hBrO = CreateSolidBrush(RGB(255, 160, 40));
-        RECT rT = { 0, 0, g_scrW, T };
-        RECT rB = { 0, g_scrH - T, g_scrW, g_scrH };
-        RECT rL = { 0, 0, T, g_scrH };
-        RECT rR = { g_scrW - T, 0, g_scrW, g_scrH };
-        FillRect(hdcBack, &rT, hBrO);
-        FillRect(hdcBack, &rB, hBrO);
-        FillRect(hdcBack, &rL, hBrO);
-        FillRect(hdcBack, &rR, hBrO);
-        DeleteObject(hBrO);
-    }
 
     BitBlt(hdc, 0, 0, g_scrW, g_scrH, hdcBack, 0, 0, SRCCOPY);
     SelectObject(hdcSrc, hbmOldSrc); DeleteDC(hdcSrc);
@@ -559,14 +587,7 @@ static LRESULT CALLBACK OverlayProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
             }
         }
         return 0;
-    case WM_TIMER:
-        if (wParam == OVERLAY_FLASH_ID) {
-            g_borderFlashOn = !g_borderFlashOn;
-            InvalidateRect(hwnd, NULL, FALSE);
-        }
-        return 0;
     case WM_DESTROY:
-        KillTimer(hwnd, OVERLAY_FLASH_ID);
         g_hOverlay = NULL;
         g_state = ST_SELECT;
         g_annos.clear();
@@ -758,7 +779,4 @@ void StartCapture(HWND hParent, int delaySec) {
 
     SetForegroundWindow(g_hOverlay);
     SetFocus(g_hOverlay);
-
-    g_borderFlashOn = true;
-    SetTimer(g_hOverlay, OVERLAY_FLASH_ID, 450, NULL);
 }
