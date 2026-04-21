@@ -112,12 +112,28 @@ static void InitToolbar() {
     int totalW = BTN_COUNT * BTN_W + (BTN_COUNT - 1) * BTN_GAP;
     // overlay 坐标中的选区
     int selL = g_selRect.left - g_scrX, selR = g_selRect.right - g_scrX;
-    int selB = g_selRect.bottom - g_scrY;
+    int selT = g_selRect.top - g_scrY,  selB = g_selRect.bottom - g_scrY;
     int startX = selL + (selR - selL - totalW) / 2;
-    int y = selB + 8;
-    // 如果下方空间不够，放到上方
-    if (y + BTN_H > g_scrH)
-        y = (g_selRect.top - g_scrY) - BTN_H - 8;
+
+    int y;
+    if (selB + 8 + BTN_H <= g_scrH) {
+        // 首选：选区下方外侧
+        y = selB + 8;
+    } else if (selT - BTN_H - 8 >= 0) {
+        // 次选：选区上方外侧
+        y = selT - BTN_H - 8;
+    } else {
+        // 选区几乎占满屏幕：贴选区底部内侧；过高则贴顶部内侧
+        y = selB - BTN_H - 8;
+        if (y < selT + 8) y = selT + 8;
+        // 最后兜底：保证一定落在屏幕可见范围
+        if (y + BTN_H > g_scrH) y = g_scrH - BTN_H - 4;
+        if (y < 0) y = 4;
+    }
+
+    // 水平方向也做屏幕边界钳制，避免窄选区靠边时按钮溢出
+    if (startX + totalW > g_scrW - 4) startX = g_scrW - 4 - totalW;
+    if (startX < 4) startX = 4;
 
     const wchar_t* labels[] = { L"箭头", L"矩形", L"画笔", L"完成", L"取消" };
     for (int i = 0; i < BTN_COUNT; i++) {
